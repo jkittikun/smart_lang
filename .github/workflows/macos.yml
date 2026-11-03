@@ -3,21 +3,41 @@ name: macOS build & test
 on:
   push:
   pull_request:
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - name: Swift version
         run: swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
       - name: Unit tests
         run: swift test
+
       - name: Build app bundle
         run: ./scripts/build_app.sh
+
       - name: Zip app
         run: ditto -c -k --keepParent SmartLang.app SmartLang.zip
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload SmartLang.zip
+        uses: actions/upload-artifact@v4
         with:
           name: SmartLang
           path: SmartLang.zip
+          retention-days: 30
