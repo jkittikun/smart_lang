@@ -30,7 +30,7 @@ jobs:
         run: swift test
 
       - name: Build app bundle
-        run: ./scripts/build_app.sh
+        run: UNIVERSAL=1 ./scripts/build_app.sh
 
       - name: Zip app
         run: ditto -c -k --keepParent SmartLang.app SmartLang.zip

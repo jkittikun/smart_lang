@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds SmartLang.app (menu-bar app) from the Swift package.
 # Usage: ./scripts/build_app.sh [--install]   (--install copies it to /Applications)
+#        UNIVERSAL=1 ./scripts/build_app.sh     (arm64 + x86_64 binary)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -8,9 +9,17 @@ APP="SmartLang.app"
 VERSION="${VERSION:-1.0.0}"
 BUNDLE_ID="${BUNDLE_ID:-com.smartlang.SmartLang}"
 
-echo "==> Building (release, universal)"
-swift build -c release --arch arm64 --arch x86_64
-BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SmartLang"
+# Native build by default (fast, works with just the Command Line Tools).
+# UNIVERSAL=1 builds an arm64 + x86_64 binary (used by CI).
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+    echo "==> Building (release, universal arm64 + x86_64)"
+    ARCH_FLAGS=(--arch arm64 --arch x86_64)
+else
+    echo "==> Building (release, $(uname -m))"
+    ARCH_FLAGS=()
+fi
+swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
+BIN="$(swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)/SmartLang"
 
 echo "==> Assembling $APP"
 rm -rf "$APP"

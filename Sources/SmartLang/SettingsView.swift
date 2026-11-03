@@ -3,100 +3,60 @@ import ServiceManagement
 import SmartLangCore
 import SwiftUI
 
-struct SettingsView: View {
-    @ObservedObject var settings: AppSettings
+/// Local UI state for the Settings window.
+///
+/// This deliberately uses an `ObservableObject` instead of SwiftUI's state
+/// property macro: in newer SDKs that macro's plugin ships only with full
+/// Xcode, so it fails to build with just the Command Line Tools.
+final class SettingsUIState: ObservableObject {
+    private let settings: AppSettings
+    private var monitor: Any?
+    private var updatingLoginItem = false
 
-    var body: some View {
-        TabView {
-            GeneralTab(settings: settings).tabItem { Text("General") }
-            AppsTab(settings: settings).tabItem { Text("Apps") }
-            WordsTab(settings: settings).tabItem { Text("Words") }
-        }
-        .padding(20)
-        .frame(width: 520, height: 420)
-    }
-}
-
-// MARK: General
-
-private struct GeneralTab: View {
-    @ObservedObject var settings: AppSettings
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var recording = false
-    @State private var monitor: Any?
-
-    var body: some View {
-        Form {
-            Toggle("Enabled", isOn: $settings.enabled)
-            Toggle("Auto-correct words typed in the wrong layout", isOn: $settings.autoCorrect)
-            Toggle("Switch keyboard layout after fixing a word", isOn: $settings.switchInputSource)
-            Toggle("Play a sound when a word is fixed", isOn: $settings.playSound)
-
-            Picker("Auto-correct sensitivity", selection: $settings.sensitivity) {
-                Text("Conservative").tag(Detector.Sensitivity.conservative)
-                Text("Balanced").tag(Detector.Sensitivity.balanced)
-                Text("Aggressive").tag(Detector.Sensitivity.aggressive)
-            }
-
-            Divider()
-
-            LabeledContent("Flip shortcut") {
-                HStack {
-                    Menu(recording ? "Press a shortcut…" : settings.hotkey.displayName) {
-                        ForEach(Hotkey.Modifier.allCases, id: \.self) { m in
-                            Button("Double-tap \(m.title)") { stopRecording(); settings.hotkey = .doubleTap(m) }
-                        }
-                        Divider()
-                        Button("Record custom shortcut…") { startRecording() }
-                    }
-                    .frame(width: 220)
-                    if recording { Button("Cancel") { stopRecording() } }
-                }
-            }
-            Text("Flips the word you're typing, the last word, or the selected text between Thai and English. Press again to flip back.")
-                .font(.caption).foregroundStyle(.secondary)
-
-            Divider()
-
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { on in
-                    do {
-                        if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                    } catch {
-                        launchAtLogin = SMAppService.mainApp.status == .enabled
-                    }
-                }
-
-            HStack {
-                Text(Permissions.isTrusted ? "✅ Accessibility permission granted" : "⚠️ Accessibility permission needed")
-                Spacer()
-                if !Permissions.isTrusted {
-                    Button("Open System Settings") { Permissions.openAccessibilitySettings() }
-                }
+    @Published var recording = false
+    @Published var newBundleID = ""
+    @Published var thaiText = ""
+    @Published var launchAtLogin: Bool {
+        didSet {
+            guard !updatingLoginItem, launchAtLogin != oldValue else { return }
+            do {
+                if launchAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            } catch {
+                updatingLoginItem = true
+                launchAtLogin = SMAppService.mainApp.status == .enabled
+                updatingLoginItem = false
             }
         }
-        .onDisappear { stopRecording() }
     }
 
-    private func startRecording() {
+    init(settings: AppSettings) {
+        self.settings = settings
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+        thaiText = settings.customThaiWords.joined(separator: " ")
+    }
+
+    // MARK: Shortcut recording
+
+    func startRecording() {
         stopRecording()
         recording = true
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            if event.keyCode == UInt16(53) && mods.isEmpty { stopRecording(); return nil } // Esc cancels
+            if event.keyCode == UInt16(53) && mods.isEmpty { self.stopRecording(); return nil } // Esc cancels
             // Require ⌘, ⌥ or ⌃ so normal typing never triggers the shortcut.
             guard !mods.intersection([.command, .option, .control]).isEmpty else { NSSound.beep(); return nil }
-            settings.hotkey = .combo(keyCode: event.keyCode, modifiers: UInt64(mods.rawValue),
-                                     display: Self.describe(event, mods))
-            stopRecording()
+            self.settings.hotkey = .combo(keyCode: event.keyCode, modifiers: UInt64(mods.rawValue),
+                                          display: Self.describe(event, mods))
+            self.stopRecording()
             return nil
         }
     }
 
-    private func stopRecording() {
+    func stopRecording() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        recording = false
+        if recording { recording = false }
     }
 
     private static func describe(_ event: NSEvent, _ mods: NSEvent.ModifierFlags) -> String {
@@ -115,11 +75,79 @@ private struct GeneralTab: View {
     }
 }
 
+struct SettingsView: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var ui: SettingsUIState
+
+    var body: some View {
+        TabView {
+            GeneralTab(settings: settings, ui: ui).tabItem { Text("General") }
+            AppsTab(settings: settings, ui: ui).tabItem { Text("Apps") }
+            WordsTab(settings: settings, ui: ui).tabItem { Text("Words") }
+        }
+        .padding(20)
+        .frame(width: 520, height: 420)
+    }
+}
+
+// MARK: General
+
+private struct GeneralTab: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var ui: SettingsUIState
+
+    var body: some View {
+        Form {
+            Toggle("Enabled", isOn: $settings.enabled)
+            Toggle("Auto-correct words typed in the wrong layout", isOn: $settings.autoCorrect)
+            Toggle("Switch keyboard layout after fixing a word", isOn: $settings.switchInputSource)
+            Toggle("Play a sound when a word is fixed", isOn: $settings.playSound)
+
+            Picker("Auto-correct sensitivity", selection: $settings.sensitivity) {
+                Text("Conservative").tag(Detector.Sensitivity.conservative)
+                Text("Balanced").tag(Detector.Sensitivity.balanced)
+                Text("Aggressive").tag(Detector.Sensitivity.aggressive)
+            }
+
+            Divider()
+
+            LabeledContent("Flip shortcut") {
+                HStack {
+                    Menu(ui.recording ? "Press a shortcut…" : settings.hotkey.displayName) {
+                        ForEach(Hotkey.Modifier.allCases, id: \.self) { m in
+                            Button("Double-tap \(m.title)") { ui.stopRecording(); settings.hotkey = .doubleTap(m) }
+                        }
+                        Divider()
+                        Button("Record custom shortcut…") { ui.startRecording() }
+                    }
+                    .frame(width: 220)
+                    if ui.recording { Button("Cancel") { ui.stopRecording() } }
+                }
+            }
+            Text("Flips the word you're typing, the last word, or the selected text between Thai and English. Press again to flip back.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+
+            Toggle("Launch at login", isOn: $ui.launchAtLogin)
+
+            HStack {
+                Text(Permissions.isTrusted ? "✅ Accessibility permission granted" : "⚠️ Accessibility permission needed")
+                Spacer()
+                if !Permissions.isTrusted {
+                    Button("Open System Settings") { Permissions.openAccessibilitySettings() }
+                }
+            }
+        }
+        .onDisappear { ui.stopRecording() }
+    }
+}
+
 // MARK: Apps
 
 private struct AppsTab: View {
     @ObservedObject var settings: AppSettings
-    @State private var newID = ""
+    @ObservedObject var ui: SettingsUIState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -141,9 +169,9 @@ private struct AppsTab: View {
                     }
                 }
                 .frame(width: 180)
-                TextField("or bundle ID, e.g. com.apple.Terminal", text: $newID)
-                    .onSubmit { add(newID); newID = "" }
-                Button("Add") { add(newID); newID = "" }
+                TextField("or bundle ID, e.g. com.apple.Terminal", text: $ui.newBundleID)
+                    .onSubmit { add(ui.newBundleID); ui.newBundleID = "" }
+                Button("Add") { add(ui.newBundleID); ui.newBundleID = "" }
             }
         }
     }
@@ -172,7 +200,7 @@ private struct AppsTab: View {
 
 private struct WordsTab: View {
     @ObservedObject var settings: AppSettings
-    @State private var thaiText = ""
+    @ObservedObject var ui: SettingsUIState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -189,19 +217,18 @@ private struct WordsTab: View {
             .frame(height: 120)
 
             Text("Extra Thai words to recognise (space or newline separated):").font(.headline)
-            TextEditor(text: $thaiText)
+            TextEditor(text: $ui.thaiText)
                 .font(.body)
                 .frame(height: 100)
                 .border(Color.secondary.opacity(0.3))
             HStack {
                 Spacer()
                 Button("Save words") {
-                    settings.customThaiWords = thaiText
+                    settings.customThaiWords = ui.thaiText
                         .split(whereSeparator: { $0.isWhitespace })
                         .map(String.init)
                 }
             }
         }
-        .onAppear { thaiText = settings.customThaiWords.joined(separator: " ") }
     }
 }

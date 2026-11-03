@@ -60,8 +60,10 @@ sources, typing, and the UI.
 
 ## Install
 
-You need macOS 13 or later and the Xcode command-line tools
-(`xcode-select --install`).
+You need macOS 13 or later and the Xcode Command Line Tools
+(`xcode-select --install`). Full Xcode isn't required. The build script makes
+a version for your Mac's chip. Run `UNIVERSAL=1 ./scripts/build_app.sh` to
+build one app that runs on both Apple Silicon and Intel Macs.
 
 ```bash
 git clone https://github.com/jkittikun/smart_lang.git

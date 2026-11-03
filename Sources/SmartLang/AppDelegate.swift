@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            let hosting = NSHostingController(rootView: SettingsView(settings: settings))
+            let hosting = NSHostingController(rootView: SettingsView(settings: settings, ui: SettingsUIState(settings: settings)))
             let window = NSWindow(contentViewController: hosting)
             window.title = "SmartLang Settings"
             window.styleMask = [.titled, .closable]
