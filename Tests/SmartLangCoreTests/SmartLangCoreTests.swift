@@ -1,0 +1,117 @@
+import XCTest
+@testable import SmartLangCore
+
+final class LayoutTests: XCTestCase {
+    let us = BuiltinLayouts.us
+    let ked = BuiltinLayouts.kedmanee
+    let pat = BuiltinLayouts.pattachote
+
+    func testTablesAreComplete() {
+        for layout in BuiltinLayouts.all {
+            XCTAssertEqual(layout.map.count, 47 * 2, layout.id)
+        }
+    }
+
+    func testKedmaneeConversion() {
+        XCTAssertEqual(Converter.convert("l;ylfu", from: us, to: ked), "สวัสดี")
+        XCTAssertEqual(Converter.convert("hello", from: us, to: ked), "้ำสสน")
+        XCTAssertEqual(Converter.convert("้ำสสน", from: ked, to: us), "hello")
+        XCTAssertEqual(Converter.convert("8iy[", from: us, to: ked), "ครับ")
+        XCTAssertEqual(Converter.convert("hello world", from: us, to: ked), "้ำสสน ไนพสก")
+    }
+
+    func testPattachoteConversion() {
+        let typed = Converter.convert("สวัสดี", from: pat, to: us)
+        XCTAssertEqual(Converter.convert(typed, from: us, to: pat), "สวัสดี")
+    }
+
+    func testRoundTrip() {
+        for word in ["hello", "keyboard", "Thank you!", "don't"] {
+            for thai in [ked, pat] {
+                let there = Converter.convert(word, from: us, to: thai)
+                XCTAssertEqual(Converter.convert(there, from: thai, to: us), word, "\(word) via \(thai.id)")
+            }
+        }
+    }
+
+    func testRenderFromKeystrokes() {
+        let strokes = us.strokes(for: "l;ylfu").compactMap { $0 }
+        XCTAssertEqual(ked.render(strokes), "สวัสดี")
+        XCTAssertEqual(us.render(strokes), "l;ylfu")
+        XCTAssertEqual(us.render(us.strokes(for: "abc").compactMap { $0 }, capsLock: true), "ABC")
+    }
+
+    func testSourceLanguage() {
+        XCTAssertEqual(Converter.sourceLanguage(of: "l;ylfu"), .english)
+        XCTAssertEqual(Converter.sourceLanguage(of: "้ำสสน"), .thai)
+        XCTAssertNil(Converter.sourceLanguage(of: "   "))
+    }
+}
+
+final class OrthographyTests: XCTestCase {
+    func testValidWords() {
+        for w in ["สวัสดี", "ครับ", "ก็", "น้ำ", "ศักดิ์", "เกาะ", "ไทย", "ทั้ง", "เป็น"] {
+            XCTAssertTrue(ThaiOrthography.check(w).isValid, w)
+        }
+    }
+
+    func testInvalidShapes() {
+        for w in ["้ำสสน", "ะ้ำ", "กิิ", "เ", "ก่่", "ำก", "กั"] {
+            XCTAssertFalse(ThaiOrthography.check(w).isValid, w)
+        }
+    }
+}
+
+final class DetectorTests: XCTestCase {
+    let d = Detector()
+    let us = BuiltinLayouts.us
+    let ked = BuiltinLayouts.kedmanee
+
+    private func check(_ typed: String, in from: KeyLayout, to: KeyLayout) -> (Bool, String) {
+        let alt = Converter.convert(typed, from: from, to: to)
+        let ok = d.shouldCorrect(typed: typed, typedLanguage: from.language, alternative: alt,
+                                 keystrokeCount: typed.unicodeScalars.count)
+        return (ok, alt)
+    }
+
+    func testThaiTypedOnEnglishLayout() {
+        for thai in ["สวัสดี", "ครับ", "ขอบคุณ", "ภาษาไทย", "ไม่เป็นไร"] {
+            let typed = Converter.convert(thai, from: ked, to: us)
+            let (ok, alt) = check(typed, in: us, to: ked)
+            XCTAssertTrue(ok, "\(typed) should become \(thai)")
+            XCTAssertEqual(alt, thai)
+        }
+    }
+
+    func testEnglishTypedOnThaiLayout() {
+        for english in ["hello", "thanks", "keyboard", "meeting", "tomorrow"] {
+            let typed = Converter.convert(english, from: us, to: ked)
+            let (ok, alt) = check(typed, in: ked, to: us)
+            XCTAssertTrue(ok, "\(typed) should become \(english)")
+            XCTAssertEqual(alt, english)
+        }
+    }
+
+    func testCorrectTextIsLeftAlone() {
+        for english in ["hello", "github", "keyboard", "Bangkok", "lol", "1234", "don't"] {
+            XCTAssertFalse(check(english, in: us, to: ked).0, english)
+        }
+        for thai in ["สวัสดี", "ครับ", "ภาษาไทย", "กิน", "ผม"] {
+            XCTAssertFalse(check(thai, in: ked, to: us).0, thai)
+        }
+    }
+
+    func testShortWordsAndIgnoreList() {
+        XCTAssertFalse(check("ok", in: us, to: ked).0) // too short to judge
+        d.ignored = ["l;ylfu"]
+        XCTAssertFalse(check("l;ylfu", in: us, to: ked).0)
+        d.ignored = []
+    }
+
+    func testExtraDictionaryPenalisesUnknownEnglish() {
+        let withDict = Detector(extraEnglishCheck: { _ in false })
+        // "dyo" is กัน typed on the US layout; plausible-looking but not a word.
+        XCTAssertTrue(withDict.shouldCorrect(typed: "dyo", typedLanguage: .english,
+                                             alternative: "กัน", keystrokeCount: 3))
+    }
+}

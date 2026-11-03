@@ -1,0 +1,23 @@
+name: macOS build & test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Unit tests
+        run: swift test
+      - name: Build app bundle
+        run: ./scripts/build_app.sh
+      - name: Zip app
+        run: ditto -c -k --keepParent SmartLang.app SmartLang.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartLang
+          path: SmartLang.zip

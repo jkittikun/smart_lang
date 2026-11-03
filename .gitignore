@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+*.xcodeproj
+SmartLang.app/
+dist/
+.DS_Store
