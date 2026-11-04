@@ -30,6 +30,12 @@ enum Hotkey: Codable, Equatable {
 
     static let `default` = Hotkey.doubleTap(.shift)
 
+    /// Ready-made combos offered in Settings.
+    static let presets: [Hotkey] = [
+        .combo(keyCode: 51, modifiers: shiftFlag, display: "⇧⌫"),    // Shift + Delete
+        .combo(keyCode: 117, modifiers: shiftFlag, display: "⇧⌦"),   // Shift + Forward Delete (Fn+Delete)
+    ]
+
     /// Always built from the key code, never from the typed character: keys
     /// like ⌫ type invisible characters, and letters depend on the active layout.
     var displayName: String {
@@ -82,8 +88,13 @@ enum Hotkey: Codable, Equatable {
     static func rejectionReason(keyCode: UInt16, modifiers: UInt64) -> String? {
         let hasCmdOptCtrl = modifiers & (commandFlag | optionFlag | controlFlag) != 0
         if hasCmdOptCtrl || functionKeys.contains(keyCode) { return nil }
-        return "Add ⌘, ⌥ or ⌃ (⇧ alone isn't enough), so normal typing doesn't trigger it."
+        // The one Shift-only exception: ⇧⌫ / ⇧⌦ (on a Mac they just delete anyway).
+        if modifiers == shiftFlag && shiftDeleteKeys.contains(keyCode) { return nil }
+        return "Add ⌘, ⌥ or ⌃ (⇧ alone works only with ⌫ or ⌦), so normal typing doesn't trigger it."
     }
+
+    /// ⌫ (Delete) and ⌦ (Forward Delete, Fn+Delete on laptops).
+    static let shiftDeleteKeys: Set<UInt16> = [51, 117]
 
     /// True if this shortcut is allowed by the current rules.
     var isAllowed: Bool {

@@ -129,6 +129,9 @@ final class Engine {
 
         // While we are rewriting text, hold the user's keystrokes and replay them afterwards.
         if replacing && (type == .keyDown || type == .keyUp) {
+            // Never queue the flip shortcut itself: holding it down would
+            // otherwise replay as a burst of flips once the rewrite ends.
+            if isFlipCombo(event) { return nil }
             if let copy = event.copy() { queued.append(copy) }
             return nil
         }
@@ -420,6 +423,12 @@ final class Engine {
     private static let modifierMask: UInt64 =
         CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue |
         CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue
+
+    private func isFlipCombo(_ event: CGEvent) -> Bool {
+        guard case let .combo(code, mods, _) = settings.hotkey else { return false }
+        return UInt16(event.getIntegerValueField(.keyboardEventKeycode)) == code
+            && event.flags.rawValue & Self.modifierMask == mods
+    }
 
     private var isOwnAppFrontmost: Bool {
         frontmostBundleID != nil && frontmostBundleID == Bundle.main.bundleIdentifier

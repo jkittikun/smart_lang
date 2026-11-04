@@ -121,6 +121,9 @@ private struct GeneralTab: View {
                             Button("Double-tap \(m.title)") { ui.stopRecording(); settings.hotkey = .doubleTap(m) }
                         }
                         Divider()
+                        Button("⇧⌫  Shift + Delete") { ui.stopRecording(); settings.hotkey = Hotkey.presets[0] }
+                        Button("⇧⌦  Shift + Forward Delete (Fn+Delete)") { ui.stopRecording(); settings.hotkey = Hotkey.presets[1] }
+                        Divider()
                         Button("Record custom shortcut…") { ui.startRecording() }
                     }
                     .frame(width: 220)

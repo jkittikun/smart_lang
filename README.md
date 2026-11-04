@@ -31,8 +31,9 @@ switch a word between Thai and English by hand. Press it again to switch back.
 
   Press the shortcut again to switch back. You can change the shortcut in
   Settings: double-tap Shift, Option, Control or Command, or record a key
-  combo. A combo needs ⌘, ⌥ or ⌃ (for example ⌃⌥Space); Shift alone isn't
-  enough. Function keys (F1–F20) also work on their own. Settings warns you if
+  combo. A combo needs ⌘, ⌥ or ⌃ (for example ⌃⌥Space). The exceptions are
+  ⇧⌫ and ⇧⌦, which you can pick straight from the menu, and function keys
+  (F1–F20), which work on their own. Settings warns you if
   a combo replaces a common macOS shortcut such as ⌘⌫ or ⌘C.
 - **Both Thai layouts.** Works with Thai Kedmanee and Thai Pattachote, plus
   US, ABC or any English layout. SmartLang reads the key tables of the layouts
