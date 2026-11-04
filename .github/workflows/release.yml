@@ -1,0 +1,92 @@
+name: Release
+
+# Run from the Actions tab ("Run workflow") with a version such as 1.0.0.
+# Builds a universal SmartLang.app, tags the commit vX.Y.Z and publishes a
+# GitHub release with SmartLang-X.Y.Z.zip attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number, e.g. 1.0.0 (no leading v)"
+        required: true
+      prerelease:
+        description: "Mark as a pre-release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must look like 1.2.3, got '$VERSION'"; exit 1
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists"; exit 1
+          fi
+
+      - name: Unit tests
+        run: swift test
+
+      - name: Build app (universal)
+        run: UNIVERSAL=1 ./scripts/build_app.sh
+
+      - name: Check app bundle
+        run: |
+          test -f SmartLang.app/Contents/Resources/AppIcon.icns
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' SmartLang.app/Contents/Info.plist)" = "$VERSION"
+          lipo -archs SmartLang.app/Contents/MacOS/SmartLang
+
+      - name: Zip app
+        run: |
+          ditto -c -k --keepParent SmartLang.app "SmartLang-$VERSION.zip"
+          shasum -a 256 "SmartLang-$VERSION.zip" | tee "SmartLang-$VERSION.zip.sha256"
+
+      - name: Create release
+        run: |
+          cat > notes.md <<EOF
+          ## SmartLang $VERSION
+
+          A macOS menu-bar app that fixes text typed in the wrong keyboard layout
+          (Thai ⇄ English), e.g. \`l;ylfu\` → \`สวัสดี\` and \`้ำสสน\` → \`hello\`.
+
+          ### Highlights
+          - Fixes words while you type, and again when you press Space, Tab or Return
+          - Flip shortcut for the current word, the last word, or selected text
+            (double-tap a modifier, ⇧⌫ / ⇧⌦, or your own combo); press again to flip back
+          - Works with Thai Kedmanee and Pattachote and any English layout
+          - Learns from your undo; per-app exclusions; custom Thai words
+          - Sensitivity setting, sounds for fixes and flips, launch at login
+
+          ### Install
+          1. Download **SmartLang-$VERSION.zip** below and unzip it.
+          2. Move **SmartLang.app** to **Applications**.
+          3. The app isn't notarized, so the first time, right-click it and choose **Open**
+             (or run \`xattr -dr com.apple.quarantine /Applications/SmartLang.app\`).
+          4. Grant **Accessibility** and **Input Monitoring** in
+             System Settings → Privacy & Security.
+
+          When updating, if SmartLang stops reacting, remove it from both permission
+          lists and add it again.
+
+          Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
+          EOF
+          flags=()
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" \
+            "SmartLang-$VERSION.zip" "SmartLang-$VERSION.zip.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "SmartLang $VERSION" \
+            --notes-file notes.md \
+            ${flags[@]+"${flags[@]}"}
