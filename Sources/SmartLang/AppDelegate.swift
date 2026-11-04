@@ -60,7 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(toggle("Enabled", settings.enabled, #selector(toggleEnabled)))
         menu.addItem(toggle("Auto-correct wrong-layout words", settings.autoCorrect, #selector(toggleAuto)))
         let live = toggle("Fix while typing (don't wait for Space)", settings.fixWhileTyping, #selector(toggleLive))
-        live.indentationLevel = 1
         live.isEnabled = settings.autoCorrect
         menu.addItem(live)
         menu.addItem(toggle("Switch keyboard layout after fixing", settings.switchInputSource, #selector(toggleSwitch)))

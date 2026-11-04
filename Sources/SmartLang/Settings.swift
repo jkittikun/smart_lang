@@ -30,6 +30,13 @@ enum Hotkey: Codable, Equatable {
 
     static let `default` = Hotkey.doubleTap(.shift)
 
+    /// Ready-made combos offered in Settings.
+    static let presets: [Hotkey] = [
+        .combo(keyCode: 51, modifiers: shiftFlag, display: "⇧⌫"),                     // Shift + Delete
+        .combo(keyCode: 49, modifiers: controlFlag | optionFlag, display: "⌃⌥Space"),
+        .combo(keyCode: 96, modifiers: 0, display: "F5"),
+    ]
+
     /// Always built from the key code, never from the typed character: keys
     /// like ⌫ type invisible characters, and letters depend on the active layout.
     var displayName: String {
@@ -125,9 +132,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(flipSound, forKey: "flipSound"); Sounds.play(flipSound, volume: soundVolume) }
     }
     @Published var soundVolume: Double { didSet { defaults.set(soundVolume, forKey: "soundVolume") } }
-    /// True while the Settings window is recording a new shortcut; the engine
-    /// then leaves the current shortcut alone so it can be recorded.
-    var isRecordingHotkey = false
+    /// Set while the Settings window is recording a new shortcut. The engine
+    /// then sends every key press here (key code, ⌘⌥⌃⇧ flags) instead of
+    /// acting on it, so any combo can be recorded, whatever app is in front.
+    var hotkeyRecorder: ((UInt16, UInt64) -> Void)?
+    var isRecordingHotkey: Bool { hotkeyRecorder != nil }
     @Published var sensitivity: Detector.Sensitivity {
         didSet { defaults.set(sensitivity.rawValue, forKey: "sensitivity") }
     }

@@ -30,7 +30,8 @@ switch a word between Thai and English by hand. Press it again to switch back.
   3. the selected text. You can select a whole sentence and flip it.
 
   Press the shortcut again to switch back. You can change the shortcut in
-  Settings: double-tap Shift, Option, Control or Command, or record a key
+  Settings: double-tap Shift, Option, Control or Command, pick a ready-made
+  combo (⇧⌫, ⌃⌥Space or F5), or record a key
   combo. A combo needs ⌘, ⌥ or ⌃ (for example ⌃⌥Space), except in two cases:
   Shift alone works with keys that don't type a letter, such as ⇧⌫, ⇧↩ or
   ⇧→; and function keys (F1–F20) work on their own. Settings warns you if a
