@@ -2,7 +2,11 @@ name: Release
 
 # Run from the Actions tab ("Run workflow") with a version such as 1.0.0.
 # Builds a universal SmartLang.app, tags the commit vX.Y.Z and publishes a
-# GitHub release with SmartLang-X.Y.Z.zip attached.
+# GitHub release with SmartLang-X.Y.Z.dmg and SmartLang-X.Y.Z.zip attached.
+#
+# If the release already exists, the app is rebuilt from that release's tag
+# and any missing files (e.g. the .dmg) are added to it; existing files are
+# left as they are.
 on:
   workflow_dispatch:
     inputs:
@@ -26,6 +30,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check version
         run: |
@@ -33,7 +39,12 @@ jobs:
             echo "Version must look like 1.2.3, got '$VERSION'"; exit 1
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "Release v$VERSION already exists"; exit 1
+            echo "Release v$VERSION exists: adding missing files to it."
+            echo "EXISTS=1" >> "$GITHUB_ENV"
+            # Build the app exactly as it was at that release (keep today's scripts).
+            git checkout "v$VERSION" -- Package.swift Sources Tests Resources
+          else
+            echo "EXISTS=0" >> "$GITHUB_ENV"
           fi
 
       - name: Unit tests
@@ -53,6 +64,12 @@ jobs:
           ditto -c -k --keepParent SmartLang.app "SmartLang-$VERSION.zip"
           shasum -a 256 "SmartLang-$VERSION.zip" | tee "SmartLang-$VERSION.zip.sha256"
 
+      - name: Make disk image
+        run: |
+          ./scripts/make_dmg.sh "$VERSION"
+          hdiutil verify "SmartLang-$VERSION.dmg"
+          shasum -a 256 "SmartLang-$VERSION.dmg" | tee "SmartLang-$VERSION.dmg.sha256"
+
       - name: Create release
         run: |
           cat > notes.md <<EOF
@@ -70,8 +87,9 @@ jobs:
           - Sensitivity setting, sounds for fixes and flips, launch at login
 
           ### Install
-          1. Download **SmartLang-$VERSION.zip** below and unzip it.
-          2. Move **SmartLang.app** to **Applications**.
+          1. Download **SmartLang-$VERSION.dmg** below and open it.
+          2. Drag **SmartLang** onto the **Applications** folder, then eject the disk image.
+             (Or download **SmartLang-$VERSION.zip**, unzip it, and move the app to Applications.)
           3. The app isn't notarized, so the first time, right-click it and choose **Open**
              (or run \`xattr -dr com.apple.quarantine /Applications/SmartLang.app\`).
           4. Grant **Accessibility** and **Input Monitoring** in
@@ -82,11 +100,25 @@ jobs:
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
           EOF
-          flags=()
-          if [[ "${{ inputs.prerelease }}" == "true" ]]; then flags+=(--prerelease); fi
-          gh release create "v$VERSION" \
-            "SmartLang-$VERSION.zip" "SmartLang-$VERSION.zip.sha256" \
-            --target "$GITHUB_SHA" \
-            --title "SmartLang $VERSION" \
-            --notes-file notes.md \
-            ${flags[@]+"${flags[@]}"}
+          files=("SmartLang-$VERSION.dmg" "SmartLang-$VERSION.dmg.sha256"
+                 "SmartLang-$VERSION.zip" "SmartLang-$VERSION.zip.sha256")
+          if [[ "$EXISTS" == "1" ]]; then
+            existing="$(gh release view "v$VERSION" --json assets --jq '.assets[].name')"
+            for f in "${files[@]}"; do
+              if grep -qxF "$f" <<<"$existing"; then
+                echo "Keeping existing $f"
+              else
+                echo "Adding $f"
+                gh release upload "v$VERSION" "$f"
+              fi
+            done
+            gh release edit "v$VERSION" --notes-file notes.md
+          else
+            flags=()
+            if [[ "${{ inputs.prerelease }}" == "true" ]]; then flags+=(--prerelease); fi
+            gh release create "v$VERSION" "${files[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "SmartLang $VERSION" \
+              --notes-file notes.md \
+              ${flags[@]+"${flags[@]}"}
+          fi

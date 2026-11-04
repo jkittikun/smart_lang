@@ -95,8 +95,9 @@ cd smart_lang
 open /Applications/SmartLang.app
 ```
 
-You can also download `SmartLang.zip` from the **Artifacts** of the latest
-**macOS build & test** run on GitHub Actions. Because the app isn't notarized,
+You can also download `SmartLang-x.y.z.dmg` from the
+[Releases](https://github.com/jkittikun/smart_lang/releases) page: open it and
+drag SmartLang onto Applications. Because the app isn't notarized,
 the first time you open it, right-click it and choose **Open**.
 
 ### Permissions
@@ -131,7 +132,12 @@ launched it from.
 
 On GitHub, open **Actions → Release → Run workflow** and enter a version such
 as `1.0.1`. The workflow runs the tests, builds a universal app, tags the
-commit `v1.0.1`, and publishes a release with `SmartLang-1.0.1.zip` attached.
+commit `v1.0.1`, and publishes a release with `SmartLang-1.0.1.dmg` and
+`SmartLang-1.0.1.zip` attached. Running it again for an existing version adds
+any missing files to that release.
+
+To make the disk image on your own Mac, run `./scripts/make_dmg.sh 1.0.1`
+after `./scripts/build_app.sh`.
 
 ### App icon
 

@@ -39,6 +39,11 @@ jobs:
           plutil -lint SmartLang.app/Contents/Info.plist
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' SmartLang.app/Contents/Info.plist
 
+      - name: Make disk image
+        run: |
+          ./scripts/make_dmg.sh
+          hdiutil verify SmartLang.dmg
+
       - name: Zip app
         run: ditto -c -k --keepParent SmartLang.app SmartLang.zip
 
