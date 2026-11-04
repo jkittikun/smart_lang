@@ -32,6 +32,13 @@ jobs:
       - name: Build app bundle
         run: UNIVERSAL=1 ./scripts/build_app.sh
 
+      - name: Check app bundle
+        run: |
+          test -x SmartLang.app/Contents/MacOS/SmartLang
+          test -f SmartLang.app/Contents/Resources/AppIcon.icns
+          plutil -lint SmartLang.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' SmartLang.app/Contents/Info.plist
+
       - name: Zip app
         run: ditto -c -k --keepParent SmartLang.app SmartLang.zip
 

@@ -25,6 +25,8 @@ echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SmartLang"
+# App icon (regenerate with: python3 scripts/make_icon.py)
+cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,6 +38,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleExecutable</key><string>SmartLang</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -53,6 +56,8 @@ if [[ "${1:-}" == "--install" ]]; then
     echo "==> Installing to /Applications"
     rm -rf "/Applications/$APP"
     cp -R "$APP" /Applications/
+    # Make Finder/Dock pick up a changed icon right away.
+    touch "/Applications/$APP"
     echo "Open it with: open /Applications/$APP"
 else
     echo "Done: $(pwd)/$APP   (open it with: open $APP)"
