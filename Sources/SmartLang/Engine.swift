@@ -159,13 +159,6 @@ final class Engine {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
 
-        // Recording a new shortcut in Settings: hand the key over and swallow it.
-        if let recorder = settings.hotkeyRecorder {
-            let mods = flags.rawValue & Self.modifierMask
-            DispatchQueue.main.async { recorder(keyCode, mods) }
-            return true
-        }
-
         // The shortcut is left alone while it is being recorded, and inside
         // SmartLang's own windows (there is nothing to flip there).
         if settings.enabled, !settings.isRecordingHotkey, !isOwnAppFrontmost,
@@ -462,7 +455,7 @@ final class Engine {
 
     /// Returns true when the configured double-tap just completed.
     private func handleFlagsChanged(_ event: CGEvent) -> Bool {
-        guard !settings.isRecordingHotkey, case let .doubleTap(wanted) = settings.hotkey else { return false }
+        guard case let .doubleTap(wanted) = settings.hotkey else { return false }
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         guard let modifier = Self.modifierKeyCodes[keyCode] else { return false }
         let now = ProcessInfo.processInfo.systemUptime

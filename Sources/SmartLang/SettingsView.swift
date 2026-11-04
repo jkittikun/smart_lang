@@ -43,37 +43,29 @@ final class SettingsUIState: ObservableObject {
         stopRecording()
         recording = true
         recordingMessage = nil
-        // Keys normally arrive from SmartLang's keyboard tap (Engine), which
-        // sees every combo before any window can handle it.
-        settings.hotkeyRecorder = { [weak self] code, mods in self?.record(keyCode: code, modifiers: mods) }
-        // Fallback for when the tap isn't running yet (permission not granted).
+        settings.isRecordingHotkey = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             // Ignore keystrokes SmartLang itself typed (e.g. the ⌘C it uses to read a selection).
             if let cg = event.cgEvent, Synth.isOurs(cg) { return nil }
             let mods = UInt64(event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue)
-            self.record(keyCode: event.keyCode, modifiers: mods)
+            if event.keyCode == UInt16(53) && mods == 0 { self.stopRecording(); return nil } // Esc cancels
+            if let reason = Hotkey.rejectionReason(keyCode: event.keyCode, modifiers: mods) {
+                self.recordingMessage = reason
+                NSSound.beep()
+                return nil
+            }
+            self.settings.hotkey = .combo(keyCode: event.keyCode, modifiers: mods,
+                                          display: Hotkey.describe(keyCode: event.keyCode, modifiers: mods))
+            self.stopRecording()
             return nil
         }
-    }
-
-    private func record(keyCode: UInt16, modifiers mods: UInt64) {
-        guard recording else { return }
-        if keyCode == 53 && mods == 0 { stopRecording(); return } // Esc cancels
-        if let reason = Hotkey.rejectionReason(keyCode: keyCode, modifiers: mods) {
-            recordingMessage = reason
-            NSSound.beep()
-            return
-        }
-        settings.hotkey = .combo(keyCode: keyCode, modifiers: mods,
-                                 display: Hotkey.describe(keyCode: keyCode, modifiers: mods))
-        stopRecording()
     }
 
     func stopRecording() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        settings.hotkeyRecorder = nil
+        settings.isRecordingHotkey = false
         if recording { recording = false }
     }
 }
@@ -127,10 +119,6 @@ private struct GeneralTab: View {
                     Menu(ui.recording ? "Press a shortcut…" : settings.hotkey.displayName) {
                         ForEach(Hotkey.Modifier.allCases, id: \.self) { m in
                             Button("Double-tap \(m.title)") { ui.stopRecording(); settings.hotkey = .doubleTap(m) }
-                        }
-                        Divider()
-                        ForEach(Hotkey.presets, id: \.displayName) { preset in
-                            Button(preset.displayName) { ui.stopRecording(); settings.hotkey = preset }
                         }
                         Divider()
                         Button("Record custom shortcut…") { ui.startRecording() }

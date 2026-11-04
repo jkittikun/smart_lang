@@ -30,13 +30,6 @@ enum Hotkey: Codable, Equatable {
 
     static let `default` = Hotkey.doubleTap(.shift)
 
-    /// Ready-made combos offered in Settings.
-    static let presets: [Hotkey] = [
-        .combo(keyCode: 51, modifiers: shiftFlag, display: "⇧⌫"),                     // Shift + Delete
-        .combo(keyCode: 49, modifiers: controlFlag | optionFlag, display: "⌃⌥Space"),
-        .combo(keyCode: 96, modifiers: 0, display: "F5"),
-    ]
-
     /// Always built from the key code, never from the typed character: keys
     /// like ⌫ type invisible characters, and letters depend on the active layout.
     var displayName: String {
@@ -74,8 +67,6 @@ enum Hotkey: Codable, Equatable {
         87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7", 91: "Keypad 8", 92: "Keypad 9",
     ]
 
-    /// Keys that don't type a character; they may be used with Shift alone.
-    static let nonCharacterKeys: Set<UInt16> = [51, 117, 36, 76, 48, 123, 124, 125, 126, 115, 119, 116, 121]
     /// Function keys; they may be used with no modifier at all.
     static let functionKeys: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
                                              105, 107, 113, 106, 64, 79, 80, 90]
@@ -91,11 +82,13 @@ enum Hotkey: Codable, Equatable {
     static func rejectionReason(keyCode: UInt16, modifiers: UInt64) -> String? {
         let hasCmdOptCtrl = modifiers & (commandFlag | optionFlag | controlFlag) != 0
         if hasCmdOptCtrl || functionKeys.contains(keyCode) { return nil }
-        if modifiers & shiftFlag != 0 && nonCharacterKeys.contains(keyCode) { return nil }
-        if modifiers & shiftFlag != 0 {
-            return "⇧ alone works only with keys that don't type a letter (⌫, ⌦, ↩, ⇥, arrows…), otherwise you couldn't type capitals."
-        }
-        return "Add ⌘, ⌥ or ⌃ (or ⇧ with ⌫, ↩, arrows…), so normal typing doesn't trigger it."
+        return "Add ⌘, ⌥ or ⌃ (⇧ alone isn't enough), so normal typing doesn't trigger it."
+    }
+
+    /// True if this shortcut is allowed by the current rules.
+    var isAllowed: Bool {
+        guard case let .combo(code, mods, _) = self else { return true }
+        return Self.rejectionReason(keyCode: code, modifiers: mods) == nil
     }
 
     /// A warning if the combo replaces a common macOS shortcut.
@@ -106,7 +99,6 @@ enum Hotkey: Codable, Equatable {
             "⌘C": "Copy", "⌘V": "Paste", "⌘X": "Cut", "⌘Z": "Undo", "⌘A": "Select All",
             "⌘S": "Save", "⌘Q": "Quit", "⌘W": "Close Window", "⌘⇥": "switching apps",
             "⌘Space": "Spotlight", "⌃Space": "switching input sources", "⌃⌥Space": "switching input sources",
-            "⇧⇥": "moving to the previous field", "⇧↩": "a new line in chat apps",
         ]
         guard let what = known[Self.describe(keyCode: code, modifiers: mods)] else { return nil }
         return "This replaces the macOS shortcut for \(what) in every app."
@@ -132,11 +124,9 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(flipSound, forKey: "flipSound"); Sounds.play(flipSound, volume: soundVolume) }
     }
     @Published var soundVolume: Double { didSet { defaults.set(soundVolume, forKey: "soundVolume") } }
-    /// Set while the Settings window is recording a new shortcut. The engine
-    /// then sends every key press here (key code, ⌘⌥⌃⇧ flags) instead of
-    /// acting on it, so any combo can be recorded, whatever app is in front.
-    var hotkeyRecorder: ((UInt16, UInt64) -> Void)?
-    var isRecordingHotkey: Bool { hotkeyRecorder != nil }
+    /// True while the Settings window is recording a new shortcut; the engine
+    /// then leaves the current shortcut alone so it can be recorded.
+    var isRecordingHotkey = false
     @Published var sensitivity: Detector.Sensitivity {
         didSet { defaults.set(sensitivity.rawValue, forKey: "sensitivity") }
     }
@@ -174,7 +164,10 @@ final class AppSettings: ObservableObject {
         flipSound = defaults.string(forKey: "flipSound") ?? ""
         soundVolume = defaults.double(forKey: "soundVolume")
         sensitivity = Detector.Sensitivity(rawValue: defaults.string(forKey: "sensitivity") ?? "") ?? .balanced
-        if let data = defaults.data(forKey: "hotkey"), let hk = try? JSONDecoder().decode(Hotkey.self, from: data) {
+        // A saved shortcut that is no longer allowed (e.g. ⇧⌫ from an earlier
+        // version) falls back to the default double-tap Shift.
+        if let data = defaults.data(forKey: "hotkey"), let hk = try? JSONDecoder().decode(Hotkey.self, from: data),
+           hk.isAllowed {
             hotkey = hk
         } else {
             hotkey = .default
