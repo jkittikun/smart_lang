@@ -100,6 +100,9 @@ private struct GeneralTab: View {
         Form {
             Toggle("Enabled", isOn: $settings.enabled)
             Toggle("Auto-correct words typed in the wrong layout", isOn: $settings.autoCorrect)
+            Toggle("Fix while typing (don't wait for Space)", isOn: $settings.fixWhileTyping)
+                .disabled(!settings.autoCorrect)
+                .padding(.leading, 16)
             Toggle("Switch keyboard layout after fixing a word", isOn: $settings.switchInputSource)
             Toggle("Play a sound when a word is fixed", isOn: $settings.playSound)
 

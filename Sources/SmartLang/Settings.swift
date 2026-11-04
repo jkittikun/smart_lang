@@ -45,6 +45,8 @@ final class AppSettings: ObservableObject {
 
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: "enabled") } }
     @Published var autoCorrect: Bool { didSet { defaults.set(autoCorrect, forKey: "autoCorrect") } }
+    /// Fix a word as soon as it is clearly wrong, without waiting for Space.
+    @Published var fixWhileTyping: Bool { didSet { defaults.set(fixWhileTyping, forKey: "fixWhileTyping") } }
     @Published var switchInputSource: Bool { didSet { defaults.set(switchInputSource, forKey: "switchInputSource") } }
     @Published var playSound: Bool { didSet { defaults.set(playSound, forKey: "playSound") } }
     @Published var sensitivity: Detector.Sensitivity {
@@ -69,12 +71,13 @@ final class AppSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
-            "enabled": true, "autoCorrect": true, "switchInputSource": true, "playSound": false,
+            "enabled": true, "autoCorrect": true, "fixWhileTyping": true, "switchInputSource": true, "playSound": false,
             "sensitivity": Detector.Sensitivity.balanced.rawValue,
             "excludedBundleIDs": AppSettings.defaultExcluded,
         ])
         enabled = defaults.bool(forKey: "enabled")
         autoCorrect = defaults.bool(forKey: "autoCorrect")
+        fixWhileTyping = defaults.bool(forKey: "fixWhileTyping")
         switchInputSource = defaults.bool(forKey: "switchInputSource")
         playSound = defaults.bool(forKey: "playSound")
         sensitivity = Detector.Sensitivity(rawValue: defaults.string(forKey: "sensitivity") ?? "") ?? .balanced

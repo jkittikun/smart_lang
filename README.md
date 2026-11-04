@@ -13,9 +13,16 @@ switch a word between Thai and English by hand. Press it again to switch back.
 
 ## Features
 
+- **Fix while typing.** As soon as the keys you've typed spell a real word in
+  the other language, SmartLang replaces it and switches your input source,
+  without waiting for Space. For example, `l;ylfu` becomes `สวัสดี` the moment
+  you type the `u`. The rest of the word then comes out in the right language,
+  so if you type `hello` on the Thai layout, it's fixed at `hell` and the `o`
+  arrives in English. This needs at least 4 keys. You can turn it off in the
+  menu or in Settings.
 - **Auto-correct when a word ends.** When you press Space, Tab or Return,
-  SmartLang checks the word. If it clearly belongs to the other language, it
-  replaces it and switches your input source.
+  SmartLang checks the word again, using a slightly looser rule. If it clearly
+  belongs to the other language, it replaces it and switches your input source.
 - **Flip shortcut.** It works on, in this order:
   1. the word you are typing right now,
   2. the word you just finished (including one that was just auto-corrected,
@@ -121,9 +128,9 @@ For Thai, add words you use often in Settings → Words, or add them to the list
 
 ## Limitations
 
-- Each word is checked on its own, when you press Space, Tab or Return. A very
-  short word (fewer than 3 keys) is never auto-corrected, because many of them
-  are real words in both languages. For example, `ok` typed on the Thai layout
+- Each word is checked on its own. A very short word (fewer than 3 keys, or
+  fewer than 4 for fixing while typing) is never auto-corrected, because many
+  of them are real words in both languages. For example, `ok` typed on the Thai layout
   is `นา`, a real Thai word. Use the flip shortcut for these.
 - After you press Return, the last word can't be flipped. Flipping it would
   mean typing Return again, which might send a chat message twice.

@@ -33,8 +33,12 @@ final class Engine {
         var otherLayoutID: String?
         /// What the user originally typed, if we auto-corrected it.
         var autoCorrectedFrom: String?
+        /// The language the word was originally typed in, if we auto-corrected it.
+        var autoCorrectedLanguage: Language?
         /// The user flipped this word by hand; don't auto-check it again.
         var manual = false
+        /// Already fixed mid-word; don't check it again (live or at Space).
+        var liveFixed = false
     }
 
     private var current = Word()
@@ -197,6 +201,7 @@ final class Engine {
             current.strokes.append(KeyStroke(keyCode: keyCode, shift: flags.contains(.maskShift)))
             current.capsLock = flags.contains(.maskAlphaShift)
             current.text += typed
+            liveCheck()
             return false
         }
 
@@ -214,8 +219,9 @@ final class Engine {
         let flippable = keyCode == KeyCodes.space || keyCode == KeyCodes.tab
         word.boundary = flippable ? boundary.copy() : nil
 
-        if settings.autoCorrect, !word.manual, let fix = bestAlternative(for: word) {
+        if settings.autoCorrect, !word.manual, !word.liveFixed, let fix = bestAlternative(for: word, live: false) {
             word.autoCorrectedFrom = word.text
+            word.autoCorrectedLanguage = word.language
             word.otherLayoutID = word.layoutID
             let oldText = word.text
             word.text = fix.text
@@ -231,13 +237,37 @@ final class Engine {
         return false
     }
 
-    private func bestAlternative(for word: Word) -> (text: String, layout: KeyLayout)? {
+    /// Fixes the word being typed as soon as it is clearly a real word in the
+    /// other language, without waiting for Space. The input source switches
+    /// too, so the rest of the word comes out in the right language.
+    private func liveCheck() {
+        guard settings.fixWhileTyping, settings.autoCorrect, !current.manual, !current.liveFixed,
+              let fix = bestAlternative(for: current, live: true) else { return }
+        let oldText = current.text
+        current.autoCorrectedFrom = oldText
+        current.autoCorrectedLanguage = current.language
+        current.otherLayoutID = current.layoutID
+        current.text = fix.text
+        current.language = fix.layout.language
+        current.layoutID = fix.layout.id
+        current.liveFixed = true
+        // The key that completed the word is still on its way to the app;
+        // `rewrite` waits briefly so its Backspaces arrive after it.
+        rewrite(deleting: oldText.unicodeScalars.count, typing: fix.text,
+                then: nil, switchTo: fix.layout, afterPendingKey: true)
+        onActivity?("\(oldText) → \(fix.text)")
+    }
+
+    private func bestAlternative(for word: Word, live: Bool) -> (text: String, layout: KeyLayout)? {
         var best: (text: String, layout: KeyLayout, score: Int)?
         for layout in inputSources.candidateLayouts(for: word.language.other) {
             let alt = layout.render(word.strokes, capsLock: word.capsLock)
-            guard detector.shouldCorrect(typed: word.text, typedLanguage: word.language, alternative: alt,
-                                         keystrokeCount: word.strokes.count,
-                                         sensitivity: settings.sensitivity) else { continue }
+            let ok = live
+                ? detector.shouldCorrectLive(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                             keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+                : detector.shouldCorrect(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                         keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+            guard ok else { continue }
             let s = detector.score(alt, as: layout.language)
             if best == nil || s > best!.score { best = (alt, layout, s) }
         }
@@ -278,9 +308,10 @@ final class Engine {
         let oldText = word.text
         let boundary = includesBoundary ? word.boundary : nil
 
-        if let original = word.autoCorrectedFrom, newText == original {
+        if word.autoCorrectedFrom != nil, word.autoCorrectedLanguage == layout.language {
             // The user undid an auto-correction: remember not to do that again.
-            let key = original.lowercased()
+            // Use the whole word as typed (it may be longer than when it was fixed).
+            let key = newText.lowercased()
             if !settings.ignoredWords.contains(key) {
                 settings.ignoredWords.append(key)
                 applySettings()
@@ -332,29 +363,52 @@ final class Engine {
 
     // MARK: Rewriting
 
-    private func rewrite(deleting count: Int, typing text: String, then boundary: CGEvent?, switchTo layout: KeyLayout) {
+    private func rewrite(deleting count: Int, typing text: String, then boundary: CGEvent?,
+                         switchTo layout: KeyLayout, afterPendingKey: Bool = false) {
         replacing = true
         let sound = settings.playSound
         workQueue.async { [weak self] in
+            if afterPendingKey { usleep(10_000) }
             Synth.backspace(count)
             Synth.type(text)
             if let boundary { Synth.repost(boundary, markAsOurs: true) }
             DispatchQueue.main.async {
                 guard let self else { return }
-                if self.settings.switchInputSource { self.inputSources.select(language: layout.language, preferringLayoutID: layout.id) }
+                var switched = false
+                if self.settings.switchInputSource {
+                    switched = self.inputSources.select(language: layout.language, preferringLayoutID: layout.id)
+                }
                 if sound { NSSound(named: "Tink")?.play() }
-                self.replacing = false
-                self.flushQueued()
+                // Give the layout switch a moment to take effect before replaying
+                // keys typed meanwhile, so they come out in the new language.
+                DispatchQueue.main.asyncAfter(deadline: .now() + (switched ? 0.03 : 0)) {
+                    self.replacing = false
+                    self.flushQueued(retranslate: switched)
+                }
             }
         }
     }
 
     /// Replays keystrokes the user typed while we were rewriting. They go back
     /// through our tap, so they are tracked like normal typing.
-    private func flushQueued() {
+    ///
+    /// With `retranslate`, key events are rebuilt from their key codes: a copied
+    /// event still carries the character from the *old* layout, while a new one
+    /// is translated with the layout that is active now.
+    private func flushQueued(retranslate: Bool = false) {
         let events = queued
         queued.removeAll()
-        for e in events { e.post(tap: .cghidEventTap) }
+        for e in events {
+            if retranslate, e.type == .keyDown || e.type == .keyUp {
+                let code = CGKeyCode(e.getIntegerValueField(.keyboardEventKeycode))
+                if let fresh = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: e.type == .keyDown) {
+                    fresh.flags = e.flags
+                    fresh.post(tap: .cghidEventTap)
+                    continue
+                }
+            }
+            e.post(tap: .cghidEventTap)
+        }
     }
 
     // MARK: Helpers

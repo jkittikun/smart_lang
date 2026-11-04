@@ -62,6 +62,25 @@ public final class Detector {
         return t < 0 && a >= 0 && a - t >= sensitivity.threshold
     }
 
+    /// Minimum keystrokes before a word may be fixed mid-word.
+    public var liveMinimumKeystrokes = 4
+
+    /// Stricter rule for fixing a word *while it is still being typed*
+    /// (before Space). The typed text must be clearly broken and the
+    /// alternative must be a known word, since the word may not be finished.
+    public func shouldCorrectLive(typed: String, typedLanguage: Language,
+                                  alternative: String, keystrokeCount: Int,
+                                  sensitivity: Sensitivity = .balanced) -> Bool {
+        guard keystrokeCount >= liveMinimumKeystrokes, typed != alternative else { return false }
+        let lower = typed.lowercased()
+        // Never fire on the beginning of a word the user has told us to leave alone.
+        if ignored.contains(where: { $0.hasPrefix(lower) }) { return false }
+        let t = score(typed, as: typedLanguage)
+        guard t <= -2 else { return false }
+        let a = score(alternative, as: typedLanguage.other)
+        return a >= 3 && a - t >= sensitivity.threshold + 1
+    }
+
     // MARK: English
 
     private static let leadingPunct: Set<Character> = ["(", "\""]

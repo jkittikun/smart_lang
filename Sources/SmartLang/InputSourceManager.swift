@@ -13,6 +13,9 @@ final class InputSourceManager {
     }
 
     private var layoutCache: [String: KeyLayout] = [:]
+    /// Candidate layouts per language. Rebuilt when the input source changes,
+    /// because the live check asks for them on every keystroke.
+    private var candidateCache: [Language: [KeyLayout]] = [:]
     /// Last layout the user had active for each language, so we switch back to
     /// *their* Thai/English layout (Kedmanee vs Pattachote, US vs ABC, …).
     private(set) var lastUsed: [Language: String] = [:]
@@ -26,6 +29,7 @@ final class InputSourceManager {
         ) { [weak self] _ in
             guard let self else { return }
             if let current = self.currentSource() { self.lastUsed[current.language] = current.id }
+            self.candidateCache.removeAll()
             self.onChange?()
         }
     }
@@ -71,6 +75,7 @@ final class InputSourceManager {
 
     /// Candidate layouts to render a word in for `language`, best first.
     func candidateLayouts(for language: Language) -> [KeyLayout] {
+        if let cached = candidateCache[language] { return cached }
         var result: [KeyLayout] = []
         if let preferred = preferredSource(for: language) { result.append(layout(for: preferred)) }
         for s in sources(for: language) where !result.contains(where: { $0.id == s.id }) {
@@ -79,6 +84,7 @@ final class InputSourceManager {
         if result.isEmpty {
             result = language == .english ? [BuiltinLayouts.us] : [BuiltinLayouts.kedmanee, BuiltinLayouts.pattachote]
         }
+        candidateCache[language] = result
         return result
     }
 

@@ -58,7 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(toggle("Enabled", settings.enabled, #selector(toggleEnabled)))
-        menu.addItem(toggle("Auto-correct while typing", settings.autoCorrect, #selector(toggleAuto)))
+        menu.addItem(toggle("Auto-correct wrong-layout words", settings.autoCorrect, #selector(toggleAuto)))
+        let live = toggle("Fix while typing (don't wait for Space)", settings.fixWhileTyping, #selector(toggleLive))
+        live.indentationLevel = 1
+        live.isEnabled = settings.autoCorrect
+        menu.addItem(live)
         menu.addItem(toggle("Switch keyboard layout after fixing", settings.switchInputSource, #selector(toggleSwitch)))
 
         let flip = NSMenuItem(title: "Flip last word / selection  (\(settings.hotkey.displayName))",
@@ -92,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleEnabled() { settings.enabled.toggle() }
     @objc private func toggleAuto() { settings.autoCorrect.toggle() }
+    @objc private func toggleLive() { settings.fixWhileTyping.toggle() }
     @objc private func toggleSwitch() { settings.switchInputSource.toggle() }
     @objc private func openPermissions() { Permissions.requestAccessibility(); Permissions.openAccessibilitySettings() }
     @objc private func openInputMonitoring() { Permissions.requestInputMonitoring(); Permissions.openInputMonitoringSettings() }

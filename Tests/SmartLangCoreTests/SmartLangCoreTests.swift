@@ -108,6 +108,49 @@ final class DetectorTests: XCTestCase {
         d.ignored = []
     }
 
+    private func live(_ typed: String, in from: KeyLayout, to: KeyLayout, detector: Detector? = nil) -> Bool {
+        let det = detector ?? d
+        return det.shouldCorrectLive(typed: typed, typedLanguage: from.language,
+                                     alternative: Converter.convert(typed, from: from, to: to),
+                                     keystrokeCount: typed.unicodeScalars.count)
+    }
+
+    func testLiveFixesCompleteWords() {
+        XCTAssertTrue(live("l;ylfu", in: us, to: ked))                 // สวัสดี
+        XCTAssertTrue(live("้ำสสน", in: ked, to: us))                  // hello
+        XCTAssertTrue(live(Converter.convert("ขอบคุณ", from: ked, to: us), in: us, to: ked))
+    }
+
+    func testLiveWaitsForAKnownWord() {
+        XCTAssertFalse(live("l;yl", in: us, to: ked))   // สวัส – not a word yet
+        XCTAssertFalse(live("l;ylf", in: us, to: ked))
+        XCTAssertFalse(live("l;y", in: us, to: ked))    // too short
+    }
+
+    func testLiveNeverFiresOnCorrectTyping() {
+        for word in ["hello", "keyboard", "meeting", "tomorrow", "github", "Bangkok"] {
+            for k in 4...word.count {
+                let prefix = String(word.prefix(k))
+                XCTAssertFalse(live(prefix, in: us, to: ked), prefix)
+                XCTAssertFalse(live(prefix, in: us, to: BuiltinLayouts.pattachote), prefix)
+            }
+        }
+        for word in ["สวัสดี", "ขอบคุณ", "ภาษาไทย", "ไม่เป็นไร", "เป็น"] {
+            let scalars = Array(word.unicodeScalars)
+            guard scalars.count >= 4 else { continue }
+            for k in 4...scalars.count {
+                let prefix = String(String.UnicodeScalarView(scalars[0..<k]))
+                XCTAssertFalse(live(prefix, in: ked, to: us), prefix)
+            }
+        }
+    }
+
+    func testLiveRespectsIgnoredPrefix() {
+        let det = Detector()
+        det.ignored = ["l;ylfu"]
+        XCTAssertFalse(live("l;ylfu", in: us, to: ked, detector: det))
+    }
+
     func testExtraDictionaryPenalisesUnknownEnglish() {
         let withDict = Detector(extraEnglishCheck: { _ in false })
         // "dyo" is กัน typed on the US layout; plausible-looking but not a word.
