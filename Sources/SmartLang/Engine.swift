@@ -159,7 +159,10 @@ final class Engine {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
 
-        if settings.enabled, case let .combo(code, mods, _) = settings.hotkey,
+        // The shortcut is left alone while it is being recorded, and inside
+        // SmartLang's own windows (there is nothing to flip there).
+        if settings.enabled, !settings.isRecordingHotkey, !isOwnAppFrontmost,
+           case let .combo(code, mods, _) = settings.hotkey,
            keyCode == code, flags.rawValue & Self.modifierMask == mods {
             DispatchQueue.main.async { [weak self] in self?.flip() }
             return true
@@ -324,7 +327,7 @@ final class Engine {
         word.manual = true
 
         rewrite(deleting: oldText.unicodeScalars.count + (boundary == nil ? 0 : 1),
-                typing: newText, then: boundary, switchTo: layout)
+                typing: newText, then: boundary, switchTo: layout, manual: true)
         onActivity?("\(oldText) → \(newText)")
     }
 
@@ -357,16 +360,17 @@ final class Engine {
         let (layout, converted, _) = best
         resetWords()
         // Typing over a selection replaces it.
-        rewrite(deleting: 0, typing: converted, then: nil, switchTo: layout)
+        rewrite(deleting: 0, typing: converted, then: nil, switchTo: layout, manual: true)
         onActivity?("\(text) → \(converted)")
     }
 
     // MARK: Rewriting
 
     private func rewrite(deleting count: Int, typing text: String, then boundary: CGEvent?,
-                         switchTo layout: KeyLayout, afterPendingKey: Bool = false) {
+                         switchTo layout: KeyLayout, afterPendingKey: Bool = false, manual: Bool = false) {
         replacing = true
-        let sound = settings.playSound
+        let sound = manual ? settings.flipSound : settings.fixSound
+        let volume = settings.soundVolume
         workQueue.async { [weak self] in
             if afterPendingKey { usleep(10_000) }
             Synth.backspace(count)
@@ -378,7 +382,7 @@ final class Engine {
                 if self.settings.switchInputSource {
                     switched = self.inputSources.select(language: layout.language, preferringLayoutID: layout.id)
                 }
-                if sound { NSSound(named: "Tink")?.play() }
+                Sounds.play(sound, volume: volume)
                 // Give the layout switch a moment to take effect before replaying
                 // keys typed meanwhile, so they come out in the new language.
                 DispatchQueue.main.asyncAfter(deadline: .now() + (switched ? 0.03 : 0)) {
@@ -416,6 +420,10 @@ final class Engine {
     private static let modifierMask: UInt64 =
         CGEventFlags.maskCommand.rawValue | CGEventFlags.maskAlternate.rawValue |
         CGEventFlags.maskControl.rawValue | CGEventFlags.maskShift.rawValue
+
+    private var isOwnAppFrontmost: Bool {
+        frontmostBundleID != nil && frontmostBundleID == Bundle.main.bundleIdentifier
+    }
 
     private var isExcludedApp: Bool {
         guard let id = frontmostBundleID else { return false }

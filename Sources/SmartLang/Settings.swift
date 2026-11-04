@@ -30,11 +30,79 @@ enum Hotkey: Codable, Equatable {
 
     static let `default` = Hotkey.doubleTap(.shift)
 
+    /// Always built from the key code, never from the typed character: keys
+    /// like ⌫ type invisible characters, and letters depend on the active layout.
     var displayName: String {
         switch self {
         case .doubleTap(let m): return "Double-tap \(m.title)"
-        case .combo(_, _, let display): return display
+        case .combo(let code, let mods, _): return Self.describe(keyCode: code, modifiers: mods)
         }
+    }
+
+    // MARK: Key names
+
+    static let shiftFlag: UInt64 = 1 << 17
+    static let controlFlag: UInt64 = 1 << 18
+    static let optionFlag: UInt64 = 1 << 19
+    static let commandFlag: UInt64 = 1 << 20
+
+    static func describe(keyCode: UInt16, modifiers: UInt64) -> String {
+        var s = ""
+        if modifiers & controlFlag != 0 { s += "⌃" }
+        if modifiers & optionFlag != 0 { s += "⌥" }
+        if modifiers & shiftFlag != 0 { s += "⇧" }
+        if modifiers & commandFlag != 0 { s += "⌘" }
+        return s + keyName(keyCode)
+    }
+
+    private static let specialKeys: [UInt16: String] = [
+        51: "⌫", 117: "⌦", 36: "↩", 76: "⌤", 48: "⇥", 49: "Space", 53: "⎋",
+        123: "←", 124: "→", 125: "↓", 126: "↑",
+        115: "↖ Home", 119: "↘ End", 116: "⇞ Page Up", 121: "⇟ Page Down",
+        122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
+        101: "F9", 109: "F10", 103: "F11", 111: "F12", 105: "F13", 107: "F14", 113: "F15",
+        106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
+        65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 75: "Keypad /", 78: "Keypad -", 81: "Keypad =",
+        82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3", 86: "Keypad 4",
+        87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7", 91: "Keypad 8", 92: "Keypad 9",
+    ]
+
+    /// Keys that don't type a character; they may be used with Shift alone.
+    static let nonCharacterKeys: Set<UInt16> = [51, 117, 36, 76, 48, 123, 124, 125, 126, 115, 119, 116, 121]
+    /// Function keys; they may be used with no modifier at all.
+    static let functionKeys: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+                                             105, 107, 113, 106, 64, 79, 80, 90]
+
+    static func keyName(_ keyCode: UInt16) -> String {
+        if let name = specialKeys[keyCode] { return name }
+        // Name letters and symbols as on a US keyboard, whatever layout is active.
+        if let ch = BuiltinLayouts.us.map[KeyStroke(keyCode: keyCode, shift: false)] { return ch.uppercased() }
+        return "Key \(keyCode)"
+    }
+
+    /// Why a combo is not allowed, or nil if it is fine.
+    static func rejectionReason(keyCode: UInt16, modifiers: UInt64) -> String? {
+        let hasCmdOptCtrl = modifiers & (commandFlag | optionFlag | controlFlag) != 0
+        if hasCmdOptCtrl || functionKeys.contains(keyCode) { return nil }
+        if modifiers & shiftFlag != 0 && nonCharacterKeys.contains(keyCode) { return nil }
+        if modifiers & shiftFlag != 0 {
+            return "⇧ alone works only with keys that don't type a letter (⌫, ⌦, ↩, ⇥, arrows…), otherwise you couldn't type capitals."
+        }
+        return "Add ⌘, ⌥ or ⌃ (or ⇧ with ⌫, ↩, arrows…), so normal typing doesn't trigger it."
+    }
+
+    /// A warning if the combo replaces a common macOS shortcut.
+    var conflictWarning: String? {
+        guard case let .combo(code, mods, _) = self else { return nil }
+        let known: [String: String] = [
+            "⌘⌫": "deleting to the start of the line", "⌥⌫": "deleting the previous word",
+            "⌘C": "Copy", "⌘V": "Paste", "⌘X": "Cut", "⌘Z": "Undo", "⌘A": "Select All",
+            "⌘S": "Save", "⌘Q": "Quit", "⌘W": "Close Window", "⌘⇥": "switching apps",
+            "⌘Space": "Spotlight", "⌃Space": "switching input sources", "⌃⌥Space": "switching input sources",
+            "⇧⇥": "moving to the previous field", "⇧↩": "a new line in chat apps",
+        ]
+        guard let what = known[Self.describe(keyCode: code, modifiers: mods)] else { return nil }
+        return "This replaces the macOS shortcut for \(what) in every app."
     }
 }
 
@@ -48,7 +116,18 @@ final class AppSettings: ObservableObject {
     /// Fix a word as soon as it is clearly wrong, without waiting for Space.
     @Published var fixWhileTyping: Bool { didSet { defaults.set(fixWhileTyping, forKey: "fixWhileTyping") } }
     @Published var switchInputSource: Bool { didSet { defaults.set(switchInputSource, forKey: "switchInputSource") } }
-    @Published var playSound: Bool { didSet { defaults.set(playSound, forKey: "playSound") } }
+    /// System sound played when a word is fixed automatically ("" = none).
+    @Published var fixSound: String {
+        didSet { defaults.set(fixSound, forKey: "fixSound"); Sounds.play(fixSound, volume: soundVolume) }
+    }
+    /// System sound played when you flip with the shortcut ("" = none).
+    @Published var flipSound: String {
+        didSet { defaults.set(flipSound, forKey: "flipSound"); Sounds.play(flipSound, volume: soundVolume) }
+    }
+    @Published var soundVolume: Double { didSet { defaults.set(soundVolume, forKey: "soundVolume") } }
+    /// True while the Settings window is recording a new shortcut; the engine
+    /// then leaves the current shortcut alone so it can be recorded.
+    var isRecordingHotkey = false
     @Published var sensitivity: Detector.Sensitivity {
         didSet { defaults.set(sensitivity.rawValue, forKey: "sensitivity") }
     }
@@ -71,7 +150,8 @@ final class AppSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
-            "enabled": true, "autoCorrect": true, "fixWhileTyping": true, "switchInputSource": true, "playSound": false,
+            "enabled": true, "autoCorrect": true, "fixWhileTyping": true, "switchInputSource": true,
+            "soundVolume": 0.6,
             "sensitivity": Detector.Sensitivity.balanced.rawValue,
             "excludedBundleIDs": AppSettings.defaultExcluded,
         ])
@@ -79,7 +159,11 @@ final class AppSettings: ObservableObject {
         autoCorrect = defaults.bool(forKey: "autoCorrect")
         fixWhileTyping = defaults.bool(forKey: "fixWhileTyping")
         switchInputSource = defaults.bool(forKey: "switchInputSource")
-        playSound = defaults.bool(forKey: "playSound")
+        // Older versions had a single on/off sound (Tink).
+        let legacySound = defaults.bool(forKey: "playSound") ? "Tink" : ""
+        fixSound = defaults.string(forKey: "fixSound") ?? legacySound
+        flipSound = defaults.string(forKey: "flipSound") ?? ""
+        soundVolume = defaults.double(forKey: "soundVolume")
         sensitivity = Detector.Sensitivity(rawValue: defaults.string(forKey: "sensitivity") ?? "") ?? .balanced
         if let data = defaults.data(forKey: "hotkey"), let hk = try? JSONDecoder().decode(Hotkey.self, from: data) {
             hotkey = hk

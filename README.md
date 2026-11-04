@@ -30,8 +30,11 @@ switch a word between Thai and English by hand. Press it again to switch back.
   3. the selected text. You can select a whole sentence and flip it.
 
   Press the shortcut again to switch back. You can change the shortcut in
-  Settings: double-tap Shift, Option, Control or Command, or record any key
-  combo such as ⌃⌥Space.
+  Settings: double-tap Shift, Option, Control or Command, or record a key
+  combo. A combo needs ⌘, ⌥ or ⌃ (for example ⌃⌥Space), except in two cases:
+  Shift alone works with keys that don't type a letter, such as ⇧⌫, ⇧↩ or
+  ⇧→; and function keys (F1–F20) work on their own. Settings warns you if a
+  combo replaces a common macOS shortcut such as ⌘⌫ or ⌘C.
 - **Both Thai layouts.** Works with Thai Kedmanee and Thai Pattachote, plus
   US, ABC or any English layout. SmartLang reads the key tables of the layouts
   you have installed, so its conversions match exactly what macOS would type.
@@ -40,8 +43,12 @@ switch a word between Thai and English by hand. Press it again to switch back.
 - **Stays out of the way.** It does nothing in Terminal, iTerm, Warp or password
   managers, or in any other app you add in Settings → Apps. It also can't see
   password fields, because macOS blocks that.
-- **Sensitivity** (Conservative, Balanced or Aggressive), an optional sound,
-  and launch at login.
+- **Sensitivity**: Conservative, Balanced or Aggressive. It sets how sure
+  SmartLang must be before it changes a word automatically. It doesn't affect
+  the flip shortcut.
+- **Sounds**: choose any macOS alert sound (or none) for automatic fixes and,
+  separately, for flips, with a volume slider and a preview button.
+- **Launch at login.**
 
 ## How it works
 

@@ -14,6 +14,8 @@ final class SettingsUIState: ObservableObject {
     private var updatingLoginItem = false
 
     @Published var recording = false
+    /// Shown under the recorder when a pressed combo isn't allowed.
+    @Published var recordingMessage: String?
     @Published var newBundleID = ""
     @Published var thaiText = ""
     @Published var launchAtLogin: Bool {
@@ -40,14 +42,21 @@ final class SettingsUIState: ObservableObject {
     func startRecording() {
         stopRecording()
         recording = true
+        recordingMessage = nil
+        settings.isRecordingHotkey = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            if event.keyCode == UInt16(53) && mods.isEmpty { self.stopRecording(); return nil } // Esc cancels
-            // Require ⌘, ⌥ or ⌃ so normal typing never triggers the shortcut.
-            guard !mods.intersection([.command, .option, .control]).isEmpty else { NSSound.beep(); return nil }
-            self.settings.hotkey = .combo(keyCode: event.keyCode, modifiers: UInt64(mods.rawValue),
-                                          display: Self.describe(event, mods))
+            // Ignore keystrokes SmartLang itself typed (e.g. the ⌘C it uses to read a selection).
+            if let cg = event.cgEvent, Synth.isOurs(cg) { return nil }
+            let mods = UInt64(event.modifierFlags.intersection([.command, .option, .control, .shift]).rawValue)
+            if event.keyCode == UInt16(53) && mods == 0 { self.stopRecording(); return nil } // Esc cancels
+            if let reason = Hotkey.rejectionReason(keyCode: event.keyCode, modifiers: mods) {
+                self.recordingMessage = reason
+                NSSound.beep()
+                return nil
+            }
+            self.settings.hotkey = .combo(keyCode: event.keyCode, modifiers: mods,
+                                          display: Hotkey.describe(keyCode: event.keyCode, modifiers: mods))
             self.stopRecording()
             return nil
         }
@@ -56,22 +65,8 @@ final class SettingsUIState: ObservableObject {
     func stopRecording() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        settings.isRecordingHotkey = false
         if recording { recording = false }
-    }
-
-    private static func describe(_ event: NSEvent, _ mods: NSEvent.ModifierFlags) -> String {
-        var s = ""
-        if mods.contains(.control) { s += "⌃" }
-        if mods.contains(.option) { s += "⌥" }
-        if mods.contains(.shift) { s += "⇧" }
-        if mods.contains(.command) { s += "⌘" }
-        switch event.keyCode {
-        case 49: s += "Space"
-        case 36: s += "Return"
-        case 48: s += "Tab"
-        default: s += (event.charactersIgnoringModifiers ?? "?").uppercased()
-        }
-        return s
     }
 }
 
@@ -86,7 +81,7 @@ struct SettingsView: View {
             WordsTab(settings: settings, ui: ui).tabItem { Text("Words") }
         }
         .padding(20)
-        .frame(width: 520, height: 420)
+        .frame(width: 540, height: 560)
     }
 }
 
@@ -104,7 +99,6 @@ private struct GeneralTab: View {
                 .disabled(!settings.autoCorrect)
                 .padding(.leading, 16)
             Toggle("Switch keyboard layout after fixing a word", isOn: $settings.switchInputSource)
-            Toggle("Play a sound when a word is fixed", isOn: $settings.playSound)
 
             Picker("Auto-correct sensitivity", selection: $settings.sensitivity) {
                 Text("Conservative").tag(Detector.Sensitivity.conservative)
@@ -127,8 +121,29 @@ private struct GeneralTab: View {
                     if ui.recording { Button("Cancel") { ui.stopRecording() } }
                 }
             }
+            if ui.recording {
+                Text(ui.recordingMessage ?? "Press the new shortcut, or Esc to cancel.")
+                    .font(.caption).foregroundStyle(ui.recordingMessage == nil ? Color.secondary : Color.orange)
+            } else if let warning = settings.hotkey.conflictWarning {
+                Text("⚠️ " + warning).font(.caption).foregroundStyle(.orange)
+            }
             Text("Flips the word you're typing, the last word, or the selected text between Thai and English. Press again to flip back.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+
+            SoundPicker(title: "Sound when a word is fixed", selection: $settings.fixSound)
+            SoundPicker(title: "Sound when you flip", selection: $settings.flipSound)
+            LabeledContent("Volume") {
+                HStack {
+                    Slider(value: $settings.soundVolume, in: 0...1, onEditingChanged: { editing in
+                        if !editing { Sounds.play(settings.fixSound.isEmpty ? settings.flipSound : settings.fixSound,
+                                                  volume: settings.soundVolume) }
+                    })
+                    .frame(width: 180)
+                }
+            }
+            .disabled(settings.fixSound.isEmpty && settings.flipSound.isEmpty)
 
             Divider()
 
@@ -143,6 +158,28 @@ private struct GeneralTab: View {
             }
         }
         .onDisappear { ui.stopRecording() }
+    }
+}
+
+private struct SoundPicker: View {
+    let title: String
+    @Binding var selection: String
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack {
+                Picker("", selection: $selection) {
+                    Text("None").tag("")
+                    ForEach(Sounds.available, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+                Button("▶︎") { Sounds.play(selection, volume: settings.soundVolume) }
+                    .disabled(selection.isEmpty)
+                    .help("Preview")
+            }
+        }
     }
 }
 
