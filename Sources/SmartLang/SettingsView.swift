@@ -88,7 +88,7 @@ struct SettingsView: View {
                 .tabItem { Text("Words") }
         }
         .padding(20)
-        .frame(width: 540, height: 560)
+        .frame(width: 560, height: 660)
     }
 }
 
@@ -153,6 +153,34 @@ private struct GeneralTab: View {
                 }
             }
             .disabled(settings.fixSound.isEmpty && settings.flipSound.isEmpty)
+
+            Divider()
+
+            Picker("Menu bar icon", selection: $settings.menuBarIcon) {
+                ForEach(StatusIcon.Style.allCases) { style in
+                    Label { Text(style.title) } icon: { Image(nsImage: StatusIcon.image(style)) }
+                        .tag(style.rawValue)
+                }
+            }
+            Picker("Flash icon when a word is fixed", selection: $settings.flashCount) {
+                Text("Off").tag(0)
+                Text("Once").tag(1)
+                Text("Twice").tag(2)
+                Text("Three times").tag(3)
+            }
+            LabeledContent("Flash length") {
+                HStack {
+                    Slider(value: $settings.flashDuration, in: 0.05...0.6, onEditingChanged: { editing in
+                        if !editing { NotificationCenter.default.post(name: .smartLangPreviewFlash, object: nil) }
+                    })
+                    .frame(width: 160)
+                    Text(String(format: "%.2f s", settings.flashDuration))
+                        .monospacedDigit()
+                        .frame(width: 52, alignment: .leading)
+                    Button("Preview") { NotificationCenter.default.post(name: .smartLangPreviewFlash, object: nil) }
+                }
+            }
+            .disabled(settings.flashCount == 0)
 
             Divider()
 

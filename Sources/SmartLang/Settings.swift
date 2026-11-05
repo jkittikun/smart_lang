@@ -135,6 +135,12 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(flipSound, forKey: "flipSound"); Sounds.play(flipSound, volume: soundVolume) }
     }
     @Published var soundVolume: Double { didSet { defaults.set(soundVolume, forKey: "soundVolume") } }
+    /// Menu-bar icon style (StatusIcon.Style raw value).
+    @Published var menuBarIcon: String { didSet { defaults.set(menuBarIcon, forKey: "menuBarIcon") } }
+    /// How many times the menu-bar icon blinks when a word is fixed or flipped (0 = off).
+    @Published var flashCount: Int { didSet { defaults.set(flashCount, forKey: "flashCount") } }
+    /// How long each blink stays inverted, in seconds.
+    @Published var flashDuration: Double { didSet { defaults.set(flashDuration, forKey: "flashDuration") } }
     /// True while the Settings window is recording a new shortcut; the engine
     /// then leaves the current shortcut alone so it can be recorded.
     var isRecordingHotkey = false
@@ -162,6 +168,7 @@ final class AppSettings: ObservableObject {
         defaults.register(defaults: [
             "enabled": true, "autoCorrect": true, "fixWhileTyping": true, "switchInputSource": true,
             "soundVolume": 0.6,
+            "menuBarIcon": "diagonal", "flashCount": 2, "flashDuration": 0.15,
             "sensitivity": Detector.Sensitivity.balanced.rawValue,
             "excludedBundleIDs": AppSettings.defaultExcluded,
         ])
@@ -174,6 +181,9 @@ final class AppSettings: ObservableObject {
         fixSound = defaults.string(forKey: "fixSound") ?? legacySound
         flipSound = defaults.string(forKey: "flipSound") ?? ""
         soundVolume = defaults.double(forKey: "soundVolume")
+        menuBarIcon = defaults.string(forKey: "menuBarIcon") ?? "diagonal"
+        flashCount = min(3, max(0, defaults.integer(forKey: "flashCount")))
+        flashDuration = min(0.6, max(0.05, defaults.double(forKey: "flashDuration")))
         sensitivity = Detector.Sensitivity(rawValue: defaults.string(forKey: "sensitivity") ?? "") ?? .balanced
         // A saved shortcut that is no longer allowed (e.g. ⇧⌫ from an earlier
         // version) falls back to the default double-tap Shift.

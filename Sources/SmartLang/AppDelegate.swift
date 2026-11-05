@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // "Preview" in Settings asks for a flash.
+        NotificationCenter.default.addObserver(self, selector: #selector(flashIcon),
+                                               name: .smartLangPreviewFlash, object: nil)
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -124,27 +127,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Icon
 
+    private var iconStyle: StatusIcon.Style {
+        StatusIcon.Style(rawValue: settings.menuBarIcon) ?? .diagonal
+    }
+
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         button.title = ""
-        button.image = StatusIcon.normal
+        button.image = StatusIcon.image(iconStyle)
         button.imagePosition = .imageOnly
         button.appearsDisabled = !settings.enabled // dimmed while paused
         button.toolTip = "SmartLang — \(settings.enabled ? "on" : "paused")"
     }
 
-    /// Double blink in inverted colours when a word is fixed or flipped.
-    private func flashIcon() {
-        guard let button = statusItem?.button else { return }
+    /// Blinks the icon in inverted colours when a word is fixed or flipped:
+    /// `flashCount` times, each blink inverted for `flashDuration` seconds.
+    @objc private func flashIcon() {
+        guard let button = statusItem?.button, settings.flashCount > 0 else { return }
         flashGeneration += 1
         let generation = flashGeneration
-        // (time from now, inverted?)
-        let steps: [(TimeInterval, Bool)] = [(0, true), (0.15, false), (0.27, true), (0.42, false)]
+        let style = iconStyle
+        let on = settings.flashDuration
+        let gap = max(0.08, on * 0.8)
+        var steps: [(TimeInterval, Bool)] = [] // (time from now, inverted?)
+        for i in 0..<settings.flashCount {
+            let start = Double(i) * (on + gap)
+            steps.append((start, true))
+            steps.append((start + on, false))
+        }
         for (delay, inverted) in steps {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.flashGeneration == generation else { return }
-                button.image = inverted ? StatusIcon.inverted : StatusIcon.normal
+                button.image = StatusIcon.image(style, inverted: inverted)
             }
         }
     }
+}
+
+extension Notification.Name {
+    static let smartLangPreviewFlash = Notification.Name("SmartLangPreviewFlash")
 }
