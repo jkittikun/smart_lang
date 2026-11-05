@@ -85,6 +85,8 @@ jobs:
           - Works with Thai Kedmanee and Pattachote and any English layout
           - Learns from your undo; per-app exclusions; custom Thai words
           - Sensitivity setting, sounds for fixes and flips, launch at login
+          - Choice of menu-bar icon styles; the icon blinks when a word is fixed
+            (choose how many times and for how long)
 
           ### Install
           1. Download **SmartLang-$VERSION.dmg** below and open it.
