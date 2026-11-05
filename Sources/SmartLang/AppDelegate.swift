@@ -10,10 +10,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: NSWindow?
     private var cancellables: Set<AnyCancellable> = []
     private var lastActivity = ""
+    /// Bumped on every flash so an older, still-running blink can't override a newer one.
+    private var flashGeneration = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         engine = Engine(settings: settings)
         engine.onActivity = { [weak self] text in
+            guard text != "ready" else { return } // tap installed; nothing was fixed
             self?.lastActivity = text
             self?.flashIcon()
         }
@@ -123,14 +126,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
-        button.title = settings.enabled ? "ก⇄A" : "ก/A"
-        button.appearsDisabled = !settings.enabled
+        button.title = ""
+        button.image = StatusIcon.normal
+        button.imagePosition = .imageOnly
+        button.appearsDisabled = !settings.enabled // dimmed while paused
         button.toolTip = "SmartLang — \(settings.enabled ? "on" : "paused")"
     }
 
+    /// Double blink in inverted colours when a word is fixed or flipped.
     private func flashIcon() {
         guard let button = statusItem?.button else { return }
-        button.title = "✓"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.updateIcon() }
+        flashGeneration += 1
+        let generation = flashGeneration
+        // (time from now, inverted?)
+        let steps: [(TimeInterval, Bool)] = [(0, true), (0.15, false), (0.27, true), (0.42, false)]
+        for (delay, inverted) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.flashGeneration == generation else { return }
+                button.image = inverted ? StatusIcon.inverted : StatusIcon.normal
+            }
+        }
     }
 }

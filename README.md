@@ -109,7 +109,7 @@ The first time it runs, macOS asks for two permissions. Grant both in
 - **Input Monitoring**: lets SmartLang see which keys you press.
 
 After you grant them, SmartLang starts working within a couple of seconds. You
-don't need to restart it. The menu-bar icon is `ก⇄A`.
+don't need to restart it. The menu-bar icon shows a small ก and A with two arrows; it blinks twice when a word is fixed or flipped.
 
 > If you rebuild the app, macOS may treat it as a new app. If it stops
 > reacting, remove SmartLang from both lists in System Settings and add it
