@@ -249,6 +249,6 @@ final class UpdateTests: XCTestCase {
     func testReleaseNotesPlainText() throws {
         let release = try ReleaseInfo.decode(Data(releaseJSON.utf8))
         let text = ReleaseNotes.plainText(release.body ?? "")
-        XCTAssertEqual(text, "Highlights\n\n• Fixes words while you type\n• Uses ditto")
+        XCTAssertEqual(text, "Highlights\n• Fixes words while you type\n• Uses ditto")
     }
 }
