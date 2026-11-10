@@ -150,9 +150,10 @@ don't need to restart it. The menu-bar icon shows a small ก and A with two arr
 >
 > Then open SmartLang and allow it.
 >
-> If the keyboard or mouse does freeze, run `killall SmartLang` (from
-> another Mac over SSH if needed), or wait: SmartLang stops listening to the
-> keyboard after a few failed attempts and says so in its menu.
+> SmartLang checks its permission twice a second and stops listening to the
+> keyboard as soon as the permission is gone, so a freeze should last at most
+> a moment. If the keyboard or mouse does stay frozen, run `killall SmartLang`
+> (from another Mac over SSH if needed).
 
 ### Updates
 
