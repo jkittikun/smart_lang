@@ -27,7 +27,18 @@ public final class Detector {
     public var extraEnglishCheck: ((String) -> Bool)?
     /// Words the user never wants auto-corrected (learned from undo).
     public var ignored: Set<String> = []
+    /// Words the user fixed by hand with the flip shortcut: what they typed
+    /// (in the wrong layout) → what it should become. Learned so the same
+    /// word is fixed automatically next time.
+    public var learned: [String: String] = [:]
     public var minimumKeystrokes = 3
+    /// Shortest word that can be learned from a manual flip.
+    public static let minimumLearnedKeystrokes = 2
+
+    /// True if the user taught us that `typed` should become `alternative`.
+    public func isLearned(typed: String, alternative: String) -> Bool {
+        learned[typed] == alternative
+    }
 
     private var maxThaiWordLength: Int
 
@@ -55,8 +66,12 @@ public final class Detector {
     public func shouldCorrect(typed: String, typedLanguage: Language,
                               alternative: String, keystrokeCount: Int,
                               sensitivity: Sensitivity = .balanced) -> Bool {
-        guard keystrokeCount >= minimumKeystrokes, typed != alternative else { return false }
+        guard typed != alternative else { return false }
         if ignored.contains(typed.lowercased()) { return false }
+        if keystrokeCount >= Self.minimumLearnedKeystrokes, isLearned(typed: typed, alternative: alternative) {
+            return true
+        }
+        guard keystrokeCount >= minimumKeystrokes else { return false }
         let t = score(typed, as: typedLanguage)
         let a = score(alternative, as: typedLanguage.other)
         return t < 0 && a >= 0 && a - t >= sensitivity.threshold
@@ -71,10 +86,18 @@ public final class Detector {
     public func shouldCorrectLive(typed: String, typedLanguage: Language,
                                   alternative: String, keystrokeCount: Int,
                                   sensitivity: Sensitivity = .balanced) -> Bool {
-        guard keystrokeCount >= liveMinimumKeystrokes, typed != alternative else { return false }
+        guard typed != alternative else { return false }
         let lower = typed.lowercased()
         // Never fire on the beginning of a word the user has told us to leave alone.
         if ignored.contains(where: { $0.hasPrefix(lower) }) { return false }
+        if keystrokeCount >= minimumKeystrokes, isLearned(typed: typed, alternative: alternative) {
+            // A learned word is fixed as soon as it is complete, unless it is a real
+            // word as typed (it may be the start of something longer) or the start
+            // of another learned word.
+            return score(typed, as: typedLanguage) < 3
+                && !learned.keys.contains(where: { $0 != typed && $0.hasPrefix(typed) })
+        }
+        guard keystrokeCount >= liveMinimumKeystrokes else { return false }
         let t = score(typed, as: typedLanguage)
         guard t <= -2 else { return false }
         let a = score(alternative, as: typedLanguage.other)

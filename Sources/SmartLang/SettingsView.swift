@@ -281,6 +281,20 @@ private struct WordsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text("Always auto-correct (learned when you flip a word by hand):").font(.headline)
+            List {
+                ForEach(settings.learnedWords.sorted { $0.key < $1.key }, id: \.key) { typed, fixed in
+                    HStack {
+                        Text(typed).foregroundStyle(.secondary)
+                        Text("→")
+                        Text(fixed)
+                        Spacer()
+                        Button("Remove") { settings.learnedWords[typed] = nil }
+                    }
+                }
+            }
+            .frame(height: 120)
+
             Text("Never auto-correct (learned when you flip a fix back):").font(.headline)
             List {
                 ForEach(settings.ignoredWords, id: \.self) { w in

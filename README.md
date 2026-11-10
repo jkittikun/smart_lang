@@ -40,6 +40,10 @@ switch a word between Thai and English by hand. Press it again to switch back.
   you have installed, so its conversions match exactly what macOS would type.
 - **Learns from your undo.** If you flip back an auto-correction, that word is
   never auto-corrected again. You can edit this list in Settings → Words.
+- **Learns from your flips.** If SmartLang missed a word and you flipped it
+  yourself (say `ltrko` → `สะพาน`), it remembers, and fixes `ltrko`
+  automatically from then on. Flip it back, or undo the fix, and it forgets.
+  You can see and remove learned words in Settings → Words.
 - **Stays out of the way.** It does nothing in Terminal, iTerm, Warp or password
   managers, or in any other app you add in Settings → Apps. It also can't see
   password fields, because macOS blocks that.

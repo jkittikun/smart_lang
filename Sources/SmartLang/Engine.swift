@@ -26,6 +26,9 @@ final class Engine {
         var text = ""
         var language: Language = .english
         var layoutID = ""
+        /// The layout the word was first typed in.
+        var typedLanguage: Language = .english
+        var typedLayoutID = ""
         /// Space/tab that followed the word, if it has been finished.
         var boundary: CGEvent?
         /// The layout of the *other* rendering, so flipping toggles between
@@ -80,6 +83,7 @@ final class Engine {
     func applySettings() {
         detector.ignored = Set(settings.ignoredWords.map { $0.lowercased() })
         detector.thaiWords = WordLists.thai.union(settings.customThaiWords)
+        detector.learned = settings.learnedWords
     }
 
     // MARK: Lifecycle
@@ -203,6 +207,8 @@ final class Engine {
                     current.language = src.language
                     current.layoutID = src.id
                 }
+                current.typedLanguage = current.language
+                current.typedLayoutID = current.layoutID
             }
             current.strokes.append(KeyStroke(keyCode: keyCode, shift: flags.contains(.maskShift)))
             current.capsLock = flags.contains(.maskAlphaShift)
@@ -224,6 +230,8 @@ final class Engine {
         current = Word()
         let flippable = keyCode == KeyCodes.space || keyCode == KeyCodes.tab
         word.boundary = flippable ? boundary.copy() : nil
+        // Flipped by hand while typing: now that the word is complete, remember it.
+        if word.manual { learn(from: word) }
 
         if settings.autoCorrect, !word.manual, !word.liveFixed, let fix = bestAlternative(for: word, live: false) {
             word.autoCorrectedFrom = word.text
@@ -265,8 +273,20 @@ final class Engine {
     }
 
     private func bestAlternative(for word: Word, live: Bool) -> (text: String, layout: KeyLayout)? {
+        let layouts = inputSources.candidateLayouts(for: word.language.other)
+        // A word the user taught us by flipping it wins outright.
+        for layout in layouts {
+            let alt = layout.render(word.strokes, capsLock: word.capsLock)
+            guard detector.isLearned(typed: word.text, alternative: alt) else { continue }
+            let ok = live
+                ? detector.shouldCorrectLive(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                             keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+                : detector.shouldCorrect(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                         keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+            return ok ? (alt, layout) : nil
+        }
         var best: (text: String, layout: KeyLayout, score: Int)?
-        for layout in inputSources.candidateLayouts(for: word.language.other) {
+        for layout in layouts {
             let alt = layout.render(word.strokes, capsLock: word.capsLock)
             let ok = live
                 ? detector.shouldCorrectLive(typed: word.text, typedLanguage: word.language, alternative: alt,
@@ -314,20 +334,27 @@ final class Engine {
         let oldText = word.text
         let boundary = includesBoundary ? word.boundary : nil
 
-        if word.autoCorrectedFrom != nil, word.autoCorrectedLanguage == layout.language {
+        let undidAutoCorrection = word.autoCorrectedFrom != nil && word.autoCorrectedLanguage == layout.language
+        if undidAutoCorrection {
             // The user undid an auto-correction: remember not to do that again.
             // Use the whole word as typed (it may be longer than when it was fixed).
             let key = newText.lowercased()
             if !settings.ignoredWords.contains(key) {
                 settings.ignoredWords.append(key)
-                applySettings()
             }
+            // If it was fixed because we learned it, unlearn it.
+            settings.learnedWords[newText] = nil
+            applySettings()
         }
         word.otherLayoutID = word.layoutID
         word.text = newText
         word.language = layout.language
         word.layoutID = layout.id
         word.manual = true
+
+        // A finished word flipped by hand: learn it now. (A word still being typed
+        // is learned when it ends, so the whole word is remembered.)
+        if includesBoundary, !undidAutoCorrection { learn(from: word) }
 
         rewrite(deleting: oldText.unicodeScalars.count + (boundary == nil ? 0 : 1),
                 typing: newText, then: boundary, switchTo: layout, manual: true)
@@ -365,6 +392,35 @@ final class Engine {
         // Typing over a selection replaces it.
         rewrite(deleting: 0, typing: converted, then: nil, switchTo: layout, manual: true)
         onActivity?("\(text) → \(converted)")
+    }
+
+    // MARK: Learning
+
+    /// Remembers a word the user flipped by hand, so it is fixed automatically
+    /// next time. Flipping it back to how it was typed forgets it again.
+    private func learn(from word: Word) {
+        guard word.autoCorrectedFrom == nil, word.strokes.count >= Detector.minimumLearnedKeystrokes,
+              let typedLayout = layout(id: word.typedLayoutID, language: word.typedLanguage) else { return }
+        let typed = typedLayout.render(word.strokes, capsLock: word.capsLock)
+        if word.language == word.typedLanguage {
+            // Flipped back to what was typed: it was right after all.
+            guard settings.learnedWords[typed] != nil else { return }
+            settings.learnedWords[typed] = nil
+        } else {
+            guard typed != word.text, settings.learnedWords[typed] != word.text else { return }
+            settings.learnedWords[typed] = word.text
+            // Learning it overrides an earlier "never auto-correct".
+            settings.ignoredWords.removeAll { $0 == typed.lowercased() }
+        }
+        applySettings()
+    }
+
+    private func layout(id: String, language: Language) -> KeyLayout? {
+        if let src = inputSources.sources(for: language).first(where: { $0.id == id }) {
+            return inputSources.layout(for: src)
+        }
+        return BuiltinLayouts.all.first { $0.id == id && $0.language == language }
+            ?? inputSources.candidateLayouts(for: language).first
     }
 
     // MARK: Rewriting

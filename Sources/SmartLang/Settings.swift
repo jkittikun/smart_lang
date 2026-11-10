@@ -155,6 +155,9 @@ final class AppSettings: ObservableObject {
     }
     /// Words the user reverted after an auto-correction; never auto-correct them again.
     @Published var ignoredWords: [String] { didSet { defaults.set(ignoredWords, forKey: "ignoredWords") } }
+    /// Words fixed by hand with the flip shortcut: typed text → corrected text.
+    /// They are auto-corrected from then on.
+    @Published var learnedWords: [String: String] { didSet { defaults.set(learnedWords, forKey: "learnedWords") } }
     /// Extra Thai words to recognise (the built-in Thai list is small).
     @Published var customThaiWords: [String] { didSet { defaults.set(customThaiWords, forKey: "customThaiWords") } }
 
@@ -196,5 +199,6 @@ final class AppSettings: ObservableObject {
         excludedBundleIDs = defaults.stringArray(forKey: "excludedBundleIDs") ?? AppSettings.defaultExcluded
         ignoredWords = defaults.stringArray(forKey: "ignoredWords") ?? []
         customThaiWords = defaults.stringArray(forKey: "customThaiWords") ?? []
+        learnedWords = defaults.dictionary(forKey: "learnedWords") as? [String: String] ?? [:]
     }
 }
