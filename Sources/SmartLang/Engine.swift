@@ -42,6 +42,8 @@ final class Engine {
         var manual = false
         /// Already fixed mid-word; don't check it again (live or at Space).
         var liveFixed = false
+        /// The typed text we learned from flipping this word by hand, if any.
+        var learnedKey: String?
     }
 
     private var current = Word()
@@ -230,8 +232,9 @@ final class Engine {
         current = Word()
         let flippable = keyCode == KeyCodes.space || keyCode == KeyCodes.tab
         word.boundary = flippable ? boundary.copy() : nil
-        // Flipped by hand while typing: now that the word is complete, remember it.
-        if word.manual { learn(from: word) }
+        // Flipped by hand while typing: the word may have grown since, so
+        // remember the whole of it now that it is complete.
+        if word.manual { learn(from: &word) }
 
         if settings.autoCorrect, !word.manual, !word.liveFixed, let fix = bestAlternative(for: word, live: false) {
             word.autoCorrectedFrom = word.text
@@ -352,9 +355,9 @@ final class Engine {
         word.layoutID = layout.id
         word.manual = true
 
-        // A finished word flipped by hand: learn it now. (A word still being typed
-        // is learned when it ends, so the whole word is remembered.)
-        if includesBoundary, !undidAutoCorrection { learn(from: word) }
+        // Flipped by hand: learn it right away. If the word is still being typed,
+        // it is learned again when it ends, in case it grew.
+        if !undidAutoCorrection { learn(from: &word) }
 
         rewrite(deleting: oldText.unicodeScalars.count + (boundary == nil ? 0 : 1),
                 typing: newText, then: boundary, switchTo: layout, manual: true)
@@ -389,6 +392,8 @@ final class Engine {
         guard let best, best.1 != text else { NSSound.beep(); return }
         let (layout, converted, _) = best
         resetWords()
+        learnFromSelection(text.trimmingCharacters(in: .whitespacesAndNewlines),
+                           becomes: converted.trimmingCharacters(in: .whitespacesAndNewlines))
         // Typing over a selection replaces it.
         rewrite(deleting: 0, typing: converted, then: nil, switchTo: layout, manual: true)
         onActivity?("\(text) → \(converted)")
@@ -398,21 +403,45 @@ final class Engine {
 
     /// Remembers a word the user flipped by hand, so it is fixed automatically
     /// next time. Flipping it back to how it was typed forgets it again.
-    private func learn(from word: Word) {
+    private func learn(from word: inout Word) {
         guard word.autoCorrectedFrom == nil, word.strokes.count >= Detector.minimumLearnedKeystrokes,
               let typedLayout = layout(id: word.typedLayoutID, language: word.typedLanguage) else { return }
         let typed = typedLayout.render(word.strokes, capsLock: word.capsLock)
+        // Learned earlier from a shorter version of this word: replace it.
+        if let old = word.learnedKey, old != typed {
+            settings.learnedWords[old] = nil
+        }
+        word.learnedKey = nil
         if word.language == word.typedLanguage {
             // Flipped back to what was typed: it was right after all.
-            guard settings.learnedWords[typed] != nil else { return }
             settings.learnedWords[typed] = nil
         } else {
-            guard typed != word.text, settings.learnedWords[typed] != word.text else { return }
-            settings.learnedWords[typed] = word.text
-            // Learning it overrides an earlier "never auto-correct".
-            settings.ignoredWords.removeAll { $0 == typed.lowercased() }
+            remember(typed: typed, fixed: word.text)
+            word.learnedKey = typed
         }
         applySettings()
+    }
+
+    /// Learns from flipping a selected word by hand.
+    private func learnFromSelection(_ text: String, becomes converted: String) {
+        guard !text.contains(where: \.isWhitespace),
+              text.unicodeScalars.count >= Detector.minimumLearnedKeystrokes else { return }
+        if settings.learnedWords[converted] == text {
+            // Flipping a learned fix back: forget it.
+            settings.learnedWords[converted] = nil
+        } else {
+            remember(typed: text, fixed: converted)
+        }
+        applySettings()
+    }
+
+    private func remember(typed: String, fixed: String) {
+        guard typed != fixed else { return }
+        if settings.learnedWords[typed] != fixed { settings.learnedWords[typed] = fixed }
+        // Learning it overrides an earlier "never auto-correct".
+        if settings.ignoredWords.contains(typed.lowercased()) {
+            settings.ignoredWords.removeAll { $0 == typed.lowercased() }
+        }
     }
 
     private func layout(id: String, language: Language) -> KeyLayout? {
