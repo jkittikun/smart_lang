@@ -129,9 +129,16 @@ don't need to restart it. The menu-bar icon shows a small ก and A with two arr
 > **After every update or rebuild, give the permissions again.** SmartLang
 > is signed ad hoc, so macOS treats each new version as a new app. The switch
 > next to SmartLang may still look on, but it no longer applies, and turning
-> it off and on again usually doesn't help. In **Accessibility** and in
-> **Input Monitoring**, select SmartLang and click **−** to remove it. Then
-> open SmartLang and allow it again when asked. Or, in Terminal:
+> it off and on again usually doesn't help.
+>
+> When SmartLang updates itself, it clears the old entries for you, and the
+> new version asks for both permissions: just allow them. If you rebuilt the
+> app yourself, or SmartLang says it couldn't clear them, do it by hand.
+> **Quit SmartLang first** (menu → Quit SmartLang). Taking its permission
+> away while it runs can freeze the keyboard and mouse until it quits. Then,
+> in **Accessibility** and in **Input Monitoring**, select SmartLang and
+> click **−** to remove it. Open SmartLang and allow it again when asked.
+> Or quit SmartLang and run, in Terminal:
 >
 > ```bash
 > tccutil reset Accessibility com.smartlang.SmartLang
@@ -141,7 +148,11 @@ don't need to restart it. The menu-bar icon shows a small ก and A with two arr
 > tccutil reset ListenEvent com.smartlang.SmartLang
 > ```
 >
-> Then quit SmartLang, open it again and allow it.
+> Then open SmartLang and allow it.
+>
+> If the keyboard or mouse does freeze, run `killall SmartLang` (from
+> another Mac over SSH if needed), or wait: SmartLang stops listening to the
+> keyboard after a few failed attempts and says so in its menu.
 
 ### Updates
 
@@ -159,9 +170,11 @@ Updates…** in the menu). When a new version is out:
    must match the published `.sha256` file, the bundle ID and version must be
    right, and the app's code signature must be intact. Then it replaces
    `/Applications/SmartLang.app` and restarts.
-4. Give the permissions again, as described in [Permissions](#permissions):
-   remove SmartLang from **Accessibility** and **Input Monitoring** with
-   **−**, then allow it again.
+4. While restarting, SmartLang clears its old **Accessibility** and
+   **Input Monitoring** entries with `tccutil reset`, because they don't apply
+   to the new build. The new version then asks for both permissions: allow
+   them. If clearing them fails, SmartLang tells you how to do it by hand
+   (see [Permissions](#permissions)).
 
 You don't need to run `xattr` or click **Open Anyway** after an update. macOS
 only quarantines files that a browser downloads, and SmartLang downloads the

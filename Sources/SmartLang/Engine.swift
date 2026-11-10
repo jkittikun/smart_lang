@@ -13,6 +13,13 @@ final class Engine {
     private var retryTimer: Timer?
     /// While the tap is installed, checks that permission is still granted.
     private var watchdog: Timer?
+    /// When macOS last disabled the tap for being too slow (system uptime).
+    private var lastTapTimeout: TimeInterval = -.infinity
+    /// Restarts caused by repeated tap timeouts in a row.
+    private var tapTimeoutRestarts = 0
+    /// True when the tap kept timing out and SmartLang gave up until it is
+    /// reopened (usually because its permission was reset while it ran).
+    private(set) var stalled = false
     private let workQueue = DispatchQueue(label: "smartlang.replace")
 
     /// Notifies the UI (menu bar icon) after a correction or flip.
@@ -93,16 +100,26 @@ final class Engine {
 
     // MARK: Lifecycle
 
-    func start() {
+    /// Installs the tap, or keeps retrying every 2 s until permission is granted.
+    /// `after` delays the first attempt.
+    func start(after delay: TimeInterval = 0) {
         guard tap == nil else { return }
-        if !installTap() {
-            // Not trusted yet: wait until the user grants permission. Only the
-            // cheap permission check runs meanwhile, not the tap itself.
-            retryTimer?.invalidate()
-            retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
-                if self?.installTap() == true { timer.invalidate() }
-            }
+        retryTimer?.invalidate()
+        retryTimer = nil
+        if delay == 0 && installTap() { return }
+        // Not trusted yet: wait until the user grants permission. Only the
+        // cheap permission check runs meanwhile, not the tap itself.
+        let first = Timer(fire: Date().addingTimeInterval(max(delay, 2)), interval: 2, repeats: true) { [weak self] timer in
+            if self?.installTap() == true { timer.invalidate() }
         }
+        RunLoop.main.add(first, forMode: .common)
+        retryTimer = first
+    }
+
+    /// Takes the tap down and starts over (after `delay`).
+    private func restart(after delay: TimeInterval) {
+        removeTap()
+        start(after: delay)
     }
 
     private func installTap() -> Bool {
@@ -130,10 +147,9 @@ final class Engine {
         // If permission is taken away (or no longer matches a rebuilt app), take
         // the tap down at once instead of leaving it to block every keystroke.
         watchdog?.invalidate()
-        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, !Permissions.isTrusted else { return }
-            self.removeTap()
-            self.start()
+            self.restart(after: 0)
         }
         onActivity?("ready")
         return true
@@ -158,7 +174,41 @@ final class Engine {
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if type == .tapDisabledByTimeout {
+            // macOS turned the tap off because events weren't coming back in
+            // time. That happens when the permission is taken away while we
+            // run (e.g. `tccutil reset`, or removing SmartLang in System
+            // Settings): re-enabling the tap then freezes keyboard and mouse
+            // for everyone. So re-enable only after a single, isolated
+            // timeout; otherwise take the tap down and try again later, which
+            // also checks the permission first.
+            // macOS may keep reporting the old permission until we relaunch,
+            // so back off, and after a few failures stop until reopened.
+            let now = ProcessInfo.processInfo.systemUptime
+            let sinceLast = now - lastTapTimeout
+            lastTapTimeout = now
+            if sinceLast > 120 { tapTimeoutRestarts = 0 }
+            if sinceLast >= 30 && Permissions.isTrusted {
+                if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return pass
+            }
+            tapTimeoutRestarts += 1
+            let attempt = tapTimeoutRestarts
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if attempt >= 3 {
+                    self.removeTap()
+                    self.retryTimer?.invalidate()
+                    self.retryTimer = nil
+                    self.stalled = true
+                    self.onActivity?("stalled")
+                } else {
+                    self.restart(after: 10 * Double(attempt))
+                }
+            }
+            return pass
+        }
+        if type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return pass
         }
