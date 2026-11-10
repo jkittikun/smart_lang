@@ -9,7 +9,10 @@ final class Engine {
     private let inputSources = InputSourceManager()
     private let detector: Detector
     private var tap: CFMachPort?
+    private var tapSource: CFRunLoopSource?
     private var retryTimer: Timer?
+    /// While the tap is installed, checks that permission is still granted.
+    private var watchdog: Timer?
     private let workQueue = DispatchQueue(label: "smartlang.replace")
 
     /// Notifies the UI (menu bar icon) after a correction or flip.
@@ -93,7 +96,8 @@ final class Engine {
     func start() {
         guard tap == nil else { return }
         if !installTap() {
-            // Not trusted yet: keep trying until the user grants permission.
+            // Not trusted yet: wait until the user grants permission. Only the
+            // cheap permission check runs meanwhile, not the tap itself.
             retryTimer?.invalidate()
             retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                 if self?.installTap() == true { timer.invalidate() }
@@ -102,6 +106,9 @@ final class Engine {
     }
 
     private func installTap() -> Bool {
+        // An active event tap without Accessibility permission can stall the
+        // keyboard for the whole system, so don't create one until it is granted.
+        guard Permissions.isTrusted else { return false }
         let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (1 << CGEventMask($1.rawValue)) }
         let callback: CGEventTapCallBack = { _, type, event, refcon in
@@ -119,8 +126,32 @@ final class Engine {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
+        tapSource = source
+        // If permission is taken away (or no longer matches a rebuilt app), take
+        // the tap down at once instead of leaving it to block every keystroke.
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, !Permissions.isTrusted else { return }
+            self.removeTap()
+            self.start()
+        }
         onActivity?("ready")
         return true
+    }
+
+    private func removeTap() {
+        watchdog?.invalidate()
+        watchdog = nil
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
+        tap = nil
+        tapSource = nil
+        replacing = false
+        queued.removeAll()
+        resetWords()
     }
 
     // MARK: Event handling (main thread)
