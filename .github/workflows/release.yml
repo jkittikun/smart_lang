@@ -114,8 +114,9 @@ jobs:
           and the new version asks for **Accessibility** and **Input Monitoring** again: just
           allow both.
 
-          Updating from 1.2.0 or earlier, or installing by hand? Clear the old permissions
-          yourself: in System Settings → Privacy & Security → **Accessibility** and
+          Updating from 1.2.0 or earlier, or installing by hand? **Quit SmartLang first**
+          (taking its permission away while it runs can freeze the keyboard), then clear the
+          old permissions yourself: in System Settings → Privacy & Security → **Accessibility** and
           **Input Monitoring**, select SmartLang and click **−** (switching it off and on
           isn't enough), or run
           \`tccutil reset Accessibility com.smartlang.SmartLang\` and

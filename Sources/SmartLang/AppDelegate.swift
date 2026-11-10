@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine = Engine(settings: settings)
         engine.onActivity = { [weak self] text in
             guard text != "ready" else { return } // tap installed; nothing was fixed
+            guard text != "stalled" else { self?.updateIcon(); return }
             self?.lastActivity = text
             self?.flashIcon()
         }
@@ -60,8 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let header = NSMenuItem(title: engine.isRunning ? "SmartLang — Thai ⇄ English" : "SmartLang — waiting for permission",
-                                action: nil, keyEquivalent: "")
+        let headerTitle: String
+        if engine.isRunning { headerTitle = "SmartLang — Thai ⇄ English" }
+        else if engine.stalled { headerTitle = "SmartLang — stopped: its permission changed. Quit and reopen it." }
+        else { headerTitle = "SmartLang — waiting for permission" }
+        let header = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         if !lastActivity.isEmpty && lastActivity != "ready" {

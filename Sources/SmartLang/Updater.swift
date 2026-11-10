@@ -414,9 +414,11 @@ final class Updater: NSObject, ObservableObject {
             alert.informativeText = """
             SmartLang was updated, but it couldn't reset its old permissions, which no longer apply to the new version.
 
-            In System Settings → Privacy & Security → Accessibility and Input Monitoring, select SmartLang, click − to remove it, then quit and reopen SmartLang and allow it when asked.
+            First quit SmartLang (menu → Quit SmartLang). Removing its permission while it runs can freeze the keyboard and mouse.
 
-            Or run these in Terminal, then reopen SmartLang:
+            Then, in System Settings → Privacy & Security → Accessibility and Input Monitoring, select SmartLang and click − to remove it. Open SmartLang again and allow it when asked.
+
+            Or, with SmartLang quit, run these in Terminal, then open SmartLang:
             tccutil reset Accessibility \(Bundle.main.bundleIdentifier ?? "com.smartlang.SmartLang")
             tccutil reset ListenEvent \(Bundle.main.bundleIdentifier ?? "com.smartlang.SmartLang")
             """
