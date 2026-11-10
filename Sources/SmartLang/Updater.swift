@@ -15,8 +15,11 @@ import UserNotifications
 ///
 /// A file the app downloads itself is not quarantined, so the new version opens
 /// without Gatekeeper's "could not verify" warning (no `xattr` needed).
-/// Releases are signed ad hoc, so macOS sees each version as a new app and the
-/// Accessibility and Input Monitoring permissions must be given again after updating.
+/// Releases are signed ad hoc, so macOS sees each version as a new app: the old
+/// Accessibility and Input Monitoring entries no longer apply. So after quitting,
+/// the updater resets them with `tccutil` before opening the new version, which
+/// then asks for both permissions again. If the reset fails, the new version
+/// explains how to remove the old entries by hand.
 final class Updater: NSObject, ObservableObject {
     static let shared = Updater()
 
@@ -70,6 +73,7 @@ final class Updater: NSObject, ObservableObject {
 
     /// Checks shortly after launch, then about once a day while SmartLang runs.
     func start() {
+        reportPermissionReset()
         if Updater.isAppBundle {
             let center = UNUserNotificationCenter.current()
             center.delegate = self
@@ -181,7 +185,7 @@ final class Updater: NSObject, ObservableObject {
         if !Updater.isAppBundle {
             info += "\n\nRunning from a development build, so it can't update itself."
         } else if signingKind(of: Bundle.main.bundleURL) == .adHoc {
-            info += "\n\nAfter updating, give SmartLang its permissions again: in System Settings → Privacy & Security → Accessibility and Input Monitoring, select SmartLang, click − to remove it, then allow it again when SmartLang asks."
+            info += "\n\nSmartLang will reset its Accessibility and Input Monitoring permissions and restart. When macOS asks, allow both again."
         }
         alert.informativeText = info
         alert.addButton(withTitle: Updater.isAppBundle ? "Install and Relaunch" : "Open Releases Page")
@@ -344,6 +348,10 @@ final class Updater: NSObject, ObservableObject {
     /// Swaps the new app into place and starts it once this process has quit.
     private func replaceAndRelaunch(appURL: URL, newApp: URL, staging: URL) {
         let fm = FileManager.default
+        // An ad-hoc signed app's permissions don't carry over to the new build,
+        // so reset them (decided before the bundle at appURL is swapped).
+        let resetPermissions = signingKind(of: appURL) != .certificate
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.smartlang.SmartLang"
         let old = staging.appendingPathComponent("previous.app", isDirectory: true)
         do {
             try fm.moveItem(at: appURL, to: old)
@@ -362,16 +370,24 @@ final class Updater: NSObject, ObservableObject {
         // Make Finder notice the new version.
         NSWorkspace.shared.noteFileSystemChanged(appURL.path)
 
-        // Wait for this process to exit, open the new version, then clean up.
+        // Wait for this process to exit, reset the stale permission entries,
+        // open the new version, then clean up. The new version reads
+        // `permissionResetAfterUpdate` to learn whether the reset worked.
         let script = """
         while /bin/kill -0 "$1" 2>/dev/null; do /bin/sleep 0.2; done
+        if [ "$5" = 1 ]; then
+            result=ok
+            /usr/bin/tccutil reset Accessibility "$4" >/dev/null 2>&1 || result=failed
+            /usr/bin/tccutil reset ListenEvent "$4" >/dev/null 2>&1 || result=failed
+            /usr/bin/defaults write "$4" permissionResetAfterUpdate -string "$result"
+        fi
         /usr/bin/open "$2"
         /bin/rm -rf "$3"
         """
         let relaunch = Process()
         relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
         relaunch.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier),
-                              appURL.path, staging.path]
+                              appURL.path, staging.path, bundleID, resetPermissions ? "1" : "0"]
         do {
             try relaunch.run()
         } catch {
@@ -379,6 +395,40 @@ final class Updater: NSObject, ObservableObject {
             return
         }
         NSApp.terminate(nil)
+    }
+
+    /// After an update: if resetting the permissions failed and they're
+    /// missing, explain how to give them again by hand.
+    private func reportPermissionReset() {
+        let key = "permissionResetAfterUpdate"
+        let defaults = UserDefaults.standard
+        guard let result = defaults.string(forKey: key) else { return }
+        defaults.removeObject(forKey: key)
+        guard result != "ok" else { return } // macOS asks for both permissions by itself
+        // Give the permission prompts and the event tap a moment first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            guard !Permissions.isTrusted || !CGPreflightListenEventAccess() else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Give SmartLang its permissions again"
+            alert.informativeText = """
+            SmartLang was updated, but it couldn't reset its old permissions, which no longer apply to the new version.
+
+            In System Settings → Privacy & Security → Accessibility and Input Monitoring, select SmartLang, click − to remove it, then quit and reopen SmartLang and allow it when asked.
+
+            Or run these in Terminal, then reopen SmartLang:
+            tccutil reset Accessibility \(Bundle.main.bundleIdentifier ?? "com.smartlang.SmartLang")
+            tccutil reset ListenEvent \(Bundle.main.bundleIdentifier ?? "com.smartlang.SmartLang")
+            """
+            alert.addButton(withTitle: "Open Accessibility Settings")
+            alert.addButton(withTitle: "Open Input Monitoring Settings")
+            alert.addButton(withTitle: "Close")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: Permissions.openAccessibilitySettings()
+            case .alertSecondButtonReturn: Permissions.openInputMonitoringSettings()
+            default: break
+            }
+        }
     }
 
     private func installLocationProblem(_ appURL: URL) -> String? {

@@ -109,13 +109,19 @@ jobs:
           menu (or Settings → Updates). The update is downloaded, checked, installed and
           relaunched for you, with no Gatekeeper warning and no need to run \`xattr\`.
 
-          After each update, give SmartLang its permissions again: in System Settings →
-          Privacy & Security → **Accessibility** and **Input Monitoring**, select SmartLang,
-          click **−** to remove it, then allow SmartLang again when it asks. (Switching it
-          off and on isn't enough, because macOS treats every new build as a new app.)
+          macOS treats every new build as a new app, so the old permissions don't carry over.
+          From 1.2.1 on, SmartLang clears them itself while it restarts (\`tccutil reset\`),
+          and the new version asks for **Accessibility** and **Input Monitoring** again: just
+          allow both.
 
-          Coming from 1.1 or earlier? Those versions can't update themselves: install this one by hand
-          as above, then do the same permission step.
+          Updating from 1.2.0 or earlier, or installing by hand? Clear the old permissions
+          yourself: in System Settings → Privacy & Security → **Accessibility** and
+          **Input Monitoring**, select SmartLang and click **−** (switching it off and on
+          isn't enough), or run
+          \`tccutil reset Accessibility com.smartlang.SmartLang\` and
+          \`tccutil reset ListenEvent com.smartlang.SmartLang\`. Then open SmartLang
+          and allow both when asked. Versions before 1.2 can't update themselves:
+          install this one by hand first.
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
           EOF
