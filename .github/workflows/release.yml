@@ -104,7 +104,7 @@ jobs:
              System Settings → Privacy & Security.
 
           ### Updating
-          SmartLang 1.1 and later check for updates by themselves: you get a notification
+          SmartLang 1.2 and later check for updates by themselves: you get a notification
           and a dot on the menu-bar icon, then choose **Update to SmartLang $VERSION…** in the
           menu (or Settings → Updates). The update is downloaded, checked, installed and
           relaunched for you, with no Gatekeeper warning and no need to run \`xattr\`.
@@ -114,7 +114,7 @@ jobs:
           click **−** to remove it, then allow SmartLang again when it asks. (Switching it
           off and on isn't enough, because macOS treats every new build as a new app.)
 
-          Coming from 1.0.x? That version can't update itself: install this one by hand
+          Coming from 1.1 or earlier? Those versions can't update themselves: install this one by hand
           as above, then do the same permission step.
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
