@@ -9,7 +9,10 @@ final class Engine {
     private let inputSources = InputSourceManager()
     private let detector: Detector
     private var tap: CFMachPort?
+    private var tapSource: CFRunLoopSource?
     private var retryTimer: Timer?
+    /// While the tap is installed, checks that permission is still granted.
+    private var watchdog: Timer?
     private let workQueue = DispatchQueue(label: "smartlang.replace")
 
     /// Notifies the UI (menu bar icon) after a correction or flip.
@@ -26,6 +29,9 @@ final class Engine {
         var text = ""
         var language: Language = .english
         var layoutID = ""
+        /// The layout the word was first typed in.
+        var typedLanguage: Language = .english
+        var typedLayoutID = ""
         /// Space/tab that followed the word, if it has been finished.
         var boundary: CGEvent?
         /// The layout of the *other* rendering, so flipping toggles between
@@ -39,6 +45,8 @@ final class Engine {
         var manual = false
         /// Already fixed mid-word; don't check it again (live or at Space).
         var liveFixed = false
+        /// The typed text we learned from flipping this word by hand, if any.
+        var learnedKey: String?
     }
 
     private var current = Word()
@@ -80,6 +88,7 @@ final class Engine {
     func applySettings() {
         detector.ignored = Set(settings.ignoredWords.map { $0.lowercased() })
         detector.thaiWords = WordLists.thai.union(settings.customThaiWords)
+        detector.learned = settings.learnedWords
     }
 
     // MARK: Lifecycle
@@ -87,7 +96,8 @@ final class Engine {
     func start() {
         guard tap == nil else { return }
         if !installTap() {
-            // Not trusted yet: keep trying until the user grants permission.
+            // Not trusted yet: wait until the user grants permission. Only the
+            // cheap permission check runs meanwhile, not the tap itself.
             retryTimer?.invalidate()
             retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                 if self?.installTap() == true { timer.invalidate() }
@@ -96,6 +106,9 @@ final class Engine {
     }
 
     private func installTap() -> Bool {
+        // An active event tap without Accessibility permission can stall the
+        // keyboard for the whole system, so don't create one until it is granted.
+        guard Permissions.isTrusted else { return false }
         let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (1 << CGEventMask($1.rawValue)) }
         let callback: CGEventTapCallBack = { _, type, event, refcon in
@@ -113,8 +126,32 @@ final class Engine {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         self.tap = tap
+        tapSource = source
+        // If permission is taken away (or no longer matches a rebuilt app), take
+        // the tap down at once instead of leaving it to block every keystroke.
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, !Permissions.isTrusted else { return }
+            self.removeTap()
+            self.start()
+        }
         onActivity?("ready")
         return true
+    }
+
+    private func removeTap() {
+        watchdog?.invalidate()
+        watchdog = nil
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
+        tap = nil
+        tapSource = nil
+        replacing = false
+        queued.removeAll()
+        resetWords()
     }
 
     // MARK: Event handling (main thread)
@@ -203,6 +240,8 @@ final class Engine {
                     current.language = src.language
                     current.layoutID = src.id
                 }
+                current.typedLanguage = current.language
+                current.typedLayoutID = current.layoutID
             }
             current.strokes.append(KeyStroke(keyCode: keyCode, shift: flags.contains(.maskShift)))
             current.capsLock = flags.contains(.maskAlphaShift)
@@ -224,6 +263,9 @@ final class Engine {
         current = Word()
         let flippable = keyCode == KeyCodes.space || keyCode == KeyCodes.tab
         word.boundary = flippable ? boundary.copy() : nil
+        // Flipped by hand while typing: the word may have grown since, so
+        // remember the whole of it now that it is complete.
+        if word.manual { learn(from: &word) }
 
         if settings.autoCorrect, !word.manual, !word.liveFixed, let fix = bestAlternative(for: word, live: false) {
             word.autoCorrectedFrom = word.text
@@ -265,8 +307,20 @@ final class Engine {
     }
 
     private func bestAlternative(for word: Word, live: Bool) -> (text: String, layout: KeyLayout)? {
+        let layouts = inputSources.candidateLayouts(for: word.language.other)
+        // A word the user taught us by flipping it wins outright.
+        for layout in layouts {
+            let alt = layout.render(word.strokes, capsLock: word.capsLock)
+            guard detector.isLearned(typed: word.text, alternative: alt) else { continue }
+            let ok = live
+                ? detector.shouldCorrectLive(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                             keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+                : detector.shouldCorrect(typed: word.text, typedLanguage: word.language, alternative: alt,
+                                         keystrokeCount: word.strokes.count, sensitivity: settings.sensitivity)
+            return ok ? (alt, layout) : nil
+        }
         var best: (text: String, layout: KeyLayout, score: Int)?
-        for layout in inputSources.candidateLayouts(for: word.language.other) {
+        for layout in layouts {
             let alt = layout.render(word.strokes, capsLock: word.capsLock)
             let ok = live
                 ? detector.shouldCorrectLive(typed: word.text, typedLanguage: word.language, alternative: alt,
@@ -314,20 +368,27 @@ final class Engine {
         let oldText = word.text
         let boundary = includesBoundary ? word.boundary : nil
 
-        if word.autoCorrectedFrom != nil, word.autoCorrectedLanguage == layout.language {
+        let undidAutoCorrection = word.autoCorrectedFrom != nil && word.autoCorrectedLanguage == layout.language
+        if undidAutoCorrection {
             // The user undid an auto-correction: remember not to do that again.
             // Use the whole word as typed (it may be longer than when it was fixed).
             let key = newText.lowercased()
             if !settings.ignoredWords.contains(key) {
                 settings.ignoredWords.append(key)
-                applySettings()
             }
+            // If it was fixed because we learned it, unlearn it.
+            settings.learnedWords[newText] = nil
+            applySettings()
         }
         word.otherLayoutID = word.layoutID
         word.text = newText
         word.language = layout.language
         word.layoutID = layout.id
         word.manual = true
+
+        // Flipped by hand: learn it right away. If the word is still being typed,
+        // it is learned again when it ends, in case it grew.
+        if !undidAutoCorrection { learn(from: &word) }
 
         rewrite(deleting: oldText.unicodeScalars.count + (boundary == nil ? 0 : 1),
                 typing: newText, then: boundary, switchTo: layout, manual: true)
@@ -362,9 +423,64 @@ final class Engine {
         guard let best, best.1 != text else { NSSound.beep(); return }
         let (layout, converted, _) = best
         resetWords()
+        learnFromSelection(text.trimmingCharacters(in: .whitespacesAndNewlines),
+                           becomes: converted.trimmingCharacters(in: .whitespacesAndNewlines))
         // Typing over a selection replaces it.
         rewrite(deleting: 0, typing: converted, then: nil, switchTo: layout, manual: true)
         onActivity?("\(text) → \(converted)")
+    }
+
+    // MARK: Learning
+
+    /// Remembers a word the user flipped by hand, so it is fixed automatically
+    /// next time. Flipping it back to how it was typed forgets it again.
+    private func learn(from word: inout Word) {
+        guard word.autoCorrectedFrom == nil, word.strokes.count >= Detector.minimumLearnedKeystrokes,
+              let typedLayout = layout(id: word.typedLayoutID, language: word.typedLanguage) else { return }
+        let typed = typedLayout.render(word.strokes, capsLock: word.capsLock)
+        // Learned earlier from a shorter version of this word: replace it.
+        if let old = word.learnedKey, old != typed {
+            settings.learnedWords[old] = nil
+        }
+        word.learnedKey = nil
+        if word.language == word.typedLanguage {
+            // Flipped back to what was typed: it was right after all.
+            settings.learnedWords[typed] = nil
+        } else {
+            remember(typed: typed, fixed: word.text)
+            word.learnedKey = typed
+        }
+        applySettings()
+    }
+
+    /// Learns from flipping a selected word by hand.
+    private func learnFromSelection(_ text: String, becomes converted: String) {
+        guard !text.contains(where: \.isWhitespace),
+              text.unicodeScalars.count >= Detector.minimumLearnedKeystrokes else { return }
+        if settings.learnedWords[converted] == text {
+            // Flipping a learned fix back: forget it.
+            settings.learnedWords[converted] = nil
+        } else {
+            remember(typed: text, fixed: converted)
+        }
+        applySettings()
+    }
+
+    private func remember(typed: String, fixed: String) {
+        guard typed != fixed else { return }
+        if settings.learnedWords[typed] != fixed { settings.learnedWords[typed] = fixed }
+        // Learning it overrides an earlier "never auto-correct".
+        if settings.ignoredWords.contains(typed.lowercased()) {
+            settings.ignoredWords.removeAll { $0 == typed.lowercased() }
+        }
+    }
+
+    private func layout(id: String, language: Language) -> KeyLayout? {
+        if let src = inputSources.sources(for: language).first(where: { $0.id == id }) {
+            return inputSources.layout(for: src)
+        }
+        return BuiltinLayouts.all.first { $0.id == id && $0.language == language }
+            ?? inputSources.candidateLayouts(for: language).first
     }
 
     // MARK: Rewriting

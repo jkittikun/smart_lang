@@ -151,6 +151,38 @@ final class DetectorTests: XCTestCase {
         XCTAssertFalse(live("l;ylfu", in: us, to: ked, detector: det))
     }
 
+    func testLearnedWordsAreCorrected() {
+        let det = Detector(extraEnglishCheck: { _ in false })
+        let typed = Converter.convert("สะพาน", from: ked, to: us)
+        XCTAssertEqual(typed, "ltrko")
+        det.learned = [typed: "สะพาน"]
+        XCTAssertTrue(det.shouldCorrect(typed: typed, typedLanguage: .english,
+                                        alternative: "สะพาน", keystrokeCount: 5))
+        XCTAssertTrue(live(typed, in: us, to: ked, detector: det))
+        // Only the exact pair that was learned.
+        XCTAssertFalse(det.isLearned(typed: typed, alternative: "สะพา"))
+        // Undoing it (ignore list) wins.
+        det.ignored = [typed]
+        XCTAssertFalse(det.shouldCorrect(typed: typed, typedLanguage: .english,
+                                         alternative: "สะพาน", keystrokeCount: 5))
+    }
+
+    func testLearnedWordsWaitWhenTheyMayContinue() {
+        let det = Detector()
+        // A real English word taught to become Thai is fixed at Space, not mid-word.
+        det.learned = ["hello": "้ำสสน"]
+        XCTAssertFalse(det.shouldCorrectLive(typed: "hello", typedLanguage: .english,
+                                             alternative: "้ำสสน", keystrokeCount: 5))
+        XCTAssertTrue(det.shouldCorrect(typed: "hello", typedLanguage: .english,
+                                        alternative: "้ำสสน", keystrokeCount: 5))
+        // Nor when it is the start of another learned word.
+        det.learned = ["ltrk": "สะพา", "ltrko": "สะพาน"]
+        XCTAssertFalse(det.shouldCorrectLive(typed: "ltrk", typedLanguage: .english,
+                                             alternative: "สะพา", keystrokeCount: 4))
+        XCTAssertTrue(det.shouldCorrectLive(typed: "ltrko", typedLanguage: .english,
+                                            alternative: "สะพาน", keystrokeCount: 5))
+    }
+
     func testExtraDictionaryPenalisesUnknownEnglish() {
         let withDict = Detector(extraEnglishCheck: { _ in false })
         // "dyo" is กัน typed on the US layout; plausible-looking but not a word.

@@ -40,6 +40,10 @@ switch a word between Thai and English by hand. Press it again to switch back.
   you have installed, so its conversions match exactly what macOS would type.
 - **Learns from your undo.** If you flip back an auto-correction, that word is
   never auto-corrected again. You can edit this list in Settings → Words.
+- **Learns from your flips.** If SmartLang missed a word and you flipped it
+  yourself (say `ltrko` → `สะพาน`), whether while typing, right after, or by
+  selecting it, it remembers, and fixes `ltrko` automatically from then on. Flip it back, or undo the fix, and it forgets.
+  You can see and remove learned words in Settings → Words.
 - **Stays out of the way.** It does nothing in Terminal, iTerm, Warp or password
   managers, or in any other app you add in Settings → Apps. It also can't see
   password fields, because macOS blocks that.
@@ -97,8 +101,15 @@ open /Applications/SmartLang.app
 
 You can also download `SmartLang-x.y.z.dmg` from the
 [Releases](https://github.com/jkittikun/smart_lang/releases) page: open it and
-drag SmartLang onto Applications. Because the app isn't notarized,
-the first time you open it, right-click it and choose **Open**.
+drag SmartLang onto Applications. Because the app isn't notarized, macOS says
+"Apple could not verify SmartLang.app is free of malware" the first time you
+open it. Click **Done**, then open **System Settings → Privacy & Security**,
+scroll down to Security and click **Open Anyway** next to SmartLang. (On macOS
+15 and later, right-click → Open no longer skips this check.) Or, in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/SmartLang.app
+```
 
 ### Permissions
 
