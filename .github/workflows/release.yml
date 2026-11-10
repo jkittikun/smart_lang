@@ -83,6 +83,8 @@ jobs:
           - Flip shortcut for the current word, the last word, or selected text
             (double-tap a modifier, ⇧⌫ / ⇧⌦, or your own combo); press again to flip back
           - Works with Thai Kedmanee and Pattachote and any English layout
+          - Learns words you flip by hand (e.g. \`ltrko\` → \`สะพาน\`) and fixes them
+            automatically next time; see and remove them in Settings → Words
           - Learns from your undo; per-app exclusions; custom Thai words
           - Sensitivity setting, sounds for fixes and flips, launch at login
           - Choice of menu-bar icon styles; the icon blinks when a word is fixed
@@ -92,13 +94,15 @@ jobs:
           1. Download **SmartLang-$VERSION.dmg** below and open it.
           2. Drag **SmartLang** onto the **Applications** folder, then eject the disk image.
              (Or download **SmartLang-$VERSION.zip**, unzip it, and move the app to Applications.)
-          3. The app isn't notarized, so the first time, right-click it and choose **Open**
-             (or run \`xattr -dr com.apple.quarantine /Applications/SmartLang.app\`).
+          3. The app isn't notarized, so the first time macOS says it "could not verify"
+             SmartLang. Click **Done**, then in System Settings → Privacy & Security
+             click **Open Anyway** (or run
+             \`xattr -dr com.apple.quarantine /Applications/SmartLang.app\`).
           4. Grant **Accessibility** and **Input Monitoring** in
              System Settings → Privacy & Security.
 
-          When updating, if SmartLang stops reacting, remove it from both permission
-          lists and add it again.
+          When updating, quit SmartLang, remove it from both permission lists, install
+          the new version and grant the permissions again.
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
           EOF
