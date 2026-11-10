@@ -101,8 +101,15 @@ open /Applications/SmartLang.app
 
 You can also download `SmartLang-x.y.z.dmg` from the
 [Releases](https://github.com/jkittikun/smart_lang/releases) page: open it and
-drag SmartLang onto Applications. Because the app isn't notarized,
-the first time you open it, right-click it and choose **Open**.
+drag SmartLang onto Applications. Because the app isn't notarized, macOS says
+"Apple could not verify SmartLang.app is free of malware" the first time you
+open it. Click **Done**, then open **System Settings → Privacy & Security**,
+scroll down to Security and click **Open Anyway** next to SmartLang. (On macOS
+15 and later, right-click → Open no longer skips this check.) Or, in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/SmartLang.app
+```
 
 ### Permissions
 
