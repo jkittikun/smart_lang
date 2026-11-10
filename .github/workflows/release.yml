@@ -58,6 +58,8 @@ jobs:
           test -f SmartLang.app/Contents/Resources/AppIcon.icns
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' SmartLang.app/Contents/Info.plist)" = "$VERSION"
           lipo -archs SmartLang.app/Contents/MacOS/SmartLang
+          codesign --verify --deep --strict --verbose=2 SmartLang.app
+          codesign --display --requirements - SmartLang.app
 
       - name: Zip app
         run: |
@@ -101,8 +103,19 @@ jobs:
           4. Grant **Accessibility** and **Input Monitoring** in
              System Settings → Privacy & Security.
 
-          When updating, quit SmartLang, remove it from both permission lists, install
-          the new version and grant the permissions again.
+          ### Updating
+          SmartLang 1.2 and later check for updates by themselves: you get a notification
+          and a dot on the menu-bar icon, then choose **Update to SmartLang $VERSION…** in the
+          menu (or Settings → Updates). The update is downloaded, checked, installed and
+          relaunched for you, with no Gatekeeper warning and no need to run \`xattr\`.
+
+          After each update, give SmartLang its permissions again: in System Settings →
+          Privacy & Security → **Accessibility** and **Input Monitoring**, select SmartLang,
+          click **−** to remove it, then allow SmartLang again when it asks. (Switching it
+          off and on isn't enough, because macOS treats every new build as a new app.)
+
+          Coming from 1.1 or earlier? Those versions can't update themselves: install this one by hand
+          as above, then do the same permission step.
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
           EOF

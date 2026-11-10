@@ -2,12 +2,18 @@
 # Builds SmartLang.app (menu-bar app) from the Swift package.
 # Usage: ./scripts/build_app.sh [--install]   (--install copies it to /Applications)
 #        UNIVERSAL=1 ./scripts/build_app.sh     (arm64 + x86_64 binary)
+#        VERSION=1.2.3 ./scripts/build_app.sh   (default: the latest vX.Y.Z git tag)
+#        SIGN_IDENTITY="name" ./scripts/build_app.sh   (default: ad hoc, "-")
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="SmartLang.app"
-VERSION="${VERSION:-1.0.0}"
+if [[ -z "${VERSION:-}" ]]; then
+    VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+    VERSION="${VERSION:-1.0.0}"
+fi
 BUNDLE_ID="${BUNDLE_ID:-com.smartlang.SmartLang}"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
 # Native build by default (fast, works with just the Command Line Tools).
 # UNIVERSAL=1 builds an arm64 + x86_64 binary (used by CI).
@@ -49,8 +55,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> Signing (ad-hoc)"
-codesign --force --deep --sign "${SIGN_IDENTITY:--}" "$APP"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "==> Signing (ad hoc)"
+else
+    echo "==> Signing with $SIGN_IDENTITY"
+fi
+codesign --force --deep --timestamp=none --sign "$SIGN_IDENTITY" "$APP"
+codesign --verify --deep --strict "$APP"
 
 if [[ "${1:-}" == "--install" ]]; then
     echo "==> Installing to /Applications"

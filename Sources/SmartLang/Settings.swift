@@ -160,6 +160,19 @@ final class AppSettings: ObservableObject {
     @Published var learnedWords: [String: String] { didSet { defaults.set(learnedWords, forKey: "learnedWords") } }
     /// Extra Thai words to recognise (the built-in Thai list is small).
     @Published var customThaiWords: [String] { didSet { defaults.set(customThaiWords, forKey: "customThaiWords") } }
+    /// Look for a new release on GitHub about once a day.
+    @Published var autoCheckForUpdates: Bool {
+        didSet { defaults.set(autoCheckForUpdates, forKey: "autoCheckForUpdates") }
+    }
+    /// A version the user chose to skip; automatic checks don't announce it.
+    @Published var skippedUpdateVersion: String {
+        didSet { defaults.set(skippedUpdateVersion, forKey: "skippedUpdateVersion") }
+    }
+    /// The last version announced in Notification Center, so it is announced only once.
+    var notifiedUpdateVersion: String {
+        get { defaults.string(forKey: "notifiedUpdateVersion") ?? "" }
+        set { defaults.set(newValue, forKey: "notifiedUpdateVersion") }
+    }
 
     static let defaultExcluded = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
@@ -174,6 +187,7 @@ final class AppSettings: ObservableObject {
             "menuBarIcon": "diagonal", "flashCount": 2, "flashDuration": 0.15,
             "sensitivity": Detector.Sensitivity.balanced.rawValue,
             "excludedBundleIDs": AppSettings.defaultExcluded,
+            "autoCheckForUpdates": true,
         ])
         enabled = defaults.bool(forKey: "enabled")
         autoCorrect = defaults.bool(forKey: "autoCorrect")
@@ -200,5 +214,7 @@ final class AppSettings: ObservableObject {
         ignoredWords = defaults.stringArray(forKey: "ignoredWords") ?? []
         customThaiWords = defaults.stringArray(forKey: "customThaiWords") ?? []
         learnedWords = defaults.dictionary(forKey: "learnedWords") as? [String: String] ?? [:]
+        autoCheckForUpdates = defaults.bool(forKey: "autoCheckForUpdates")
+        skippedUpdateVersion = defaults.string(forKey: "skippedUpdateVersion") ?? ""
     }
 }
