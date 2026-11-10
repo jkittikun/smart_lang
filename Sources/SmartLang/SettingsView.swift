@@ -86,6 +86,9 @@ struct SettingsView: View {
             WordsTab(settings: settings, ui: ui)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .tabItem { Text("Words") }
+            UpdatesTab(settings: settings, updater: Updater.shared)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem { Text("Updates") }
         }
         .padding(20)
         .frame(width: 560, height: 660)
@@ -217,6 +220,66 @@ private struct SoundPicker: View {
                     .help("Preview")
             }
         }
+    }
+}
+
+// MARK: Updates
+
+private struct UpdatesTab: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var updater: Updater
+
+    var body: some View {
+        Form {
+            LabeledContent("Installed version") { Text(Updater.currentVersionString).monospacedDigit() }
+            Toggle("Check for updates automatically", isOn: $settings.autoCheckForUpdates)
+            Text("SmartLang looks for a new release on GitHub about once a day. When there is one, you get a notification and a dot on the menu-bar icon; nothing is installed until you click Install.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+
+            HStack {
+                Button("Check Now") { updater.check(userInitiated: true) }
+                    .disabled(busy)
+                if let version = updater.available?.version {
+                    Button("Install \(version.description)…") { updater.showUpdateAlert() }
+                        .disabled(busy)
+                }
+                Spacer()
+                Button("Releases Page") { NSWorkspace.shared.open(Updater.releasesPage) }
+            }
+            Text(status).font(.caption).foregroundStyle(.secondary)
+            if !settings.skippedUpdateVersion.isEmpty {
+                HStack {
+                    Text("Skipped version: \(settings.skippedUpdateVersion)").font(.caption)
+                    Button("Don't skip") { settings.skippedUpdateVersion = "" }
+                }
+            }
+        }
+    }
+
+    private var busy: Bool {
+        switch updater.state {
+        case .checking, .downloading, .installing: return true
+        default: return false
+        }
+    }
+
+    private var status: String {
+        switch updater.state {
+        case .checking: return "Checking…"
+        case .downloading: return "Downloading the update…"
+        case .installing: return "Installing the update…"
+        case .available: return "Version \(updater.available?.version?.description ?? "") is available."
+        case .upToDate: return "SmartLang is up to date." + lastCheckedText
+        case .failed(let message): return message
+        case .idle: return lastCheckedText.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    private var lastCheckedText: String {
+        guard let date = updater.lastChecked else { return "" }
+        return " Last checked " + date.formatted(date: .abbreviated, time: .shortened) + "."
     }
 }
 

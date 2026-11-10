@@ -190,3 +190,65 @@ final class DetectorTests: XCTestCase {
                                              alternative: "กัน", keystrokeCount: 3))
     }
 }
+
+final class UpdateTests: XCTestCase {
+    func testVersionParsingAndOrdering() {
+        XCTAssertEqual(AppVersion("v1.2.3")?.description, "1.2.3")
+        XCTAssertEqual(AppVersion("1.2"), AppVersion("1.2.0"))
+        XCTAssertEqual(AppVersion("2.0.0-beta.1")?.description, "2.0.0")
+        XCTAssertNil(AppVersion(""))
+        XCTAssertNil(AppVersion("1..2"))
+        XCTAssertNil(AppVersion("abc"))
+        XCTAssertLessThan(AppVersion("1.0.9")!, AppVersion("1.0.10")!)
+        XCTAssertLessThan(AppVersion("1.9.0")!, AppVersion("2.0")!)
+        XCTAssertFalse(AppVersion("1.1.0")! < AppVersion("1.1")!)
+    }
+
+    private let releaseJSON = """
+    {
+      "tag_name": "v1.2.0",
+      "name": "SmartLang 1.2.0",
+      "body": "## SmartLang 1.2.0\\n\\n### Highlights\\n- Fixes **words**\\n  while you type\\n- Uses `ditto`\\n\\n### Install\\n1. Download it",
+      "html_url": "https://github.com/jkittikun/smart_lang/releases/tag/v1.2.0",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {"name": "SmartLang-1.2.0.dmg", "browser_download_url": "https://example.com/SmartLang-1.2.0.dmg", "size": 10},
+        {"name": "SmartLang-1.2.0.zip", "browser_download_url": "https://example.com/SmartLang-1.2.0.zip", "size": 20},
+        {"name": "SmartLang-1.2.0.zip.sha256", "browser_download_url": "https://example.com/SmartLang-1.2.0.zip.sha256", "size": 90}
+      ]
+    }
+    """
+
+    func testReleaseDecodingAndAssets() throws {
+        let release = try ReleaseInfo.decode(Data(releaseJSON.utf8))
+        XCTAssertEqual(release.version, AppVersion("1.2.0"))
+        XCTAssertEqual(release.zipAsset?.name, "SmartLang-1.2.0.zip")
+        XCTAssertEqual(release.zipChecksumAsset?.name, "SmartLang-1.2.0.zip.sha256")
+        XCTAssertTrue(release.isUpdate(over: AppVersion("1.1.9")!))
+        XCTAssertFalse(release.isUpdate(over: AppVersion("1.2.0")!))
+        XCTAssertFalse(release.isUpdate(over: AppVersion("1.3.0")!))
+    }
+
+    func testReleaseWithoutChecksumIsNotInstallable() {
+        let release = ReleaseInfo(tagName: "v9.0.0", name: nil, body: nil,
+                                  htmlURL: URL(string: "https://example.com")!,
+                                  assets: [.init(name: "SmartLang-9.0.0.zip",
+                                                 browserDownloadURL: URL(string: "https://example.com/z")!, size: 1)])
+        XCTAssertFalse(release.isUpdate(over: AppVersion("1.0.0")!))
+    }
+
+    func testChecksumParsing() {
+        let digest = String(repeating: "ab", count: 32)
+        XCTAssertEqual(UpdateChecksum.parse("\(digest.uppercased())  SmartLang-1.2.0.zip\n"), digest)
+        XCTAssertEqual(UpdateChecksum.parse("\(digest) *SmartLang-1.2.0.zip"), digest)
+        XCTAssertNil(UpdateChecksum.parse("not a checksum"))
+        XCTAssertEqual(UpdateChecksum.hex([0x00, 0x0f, 0xff]), "000fff")
+    }
+
+    func testReleaseNotesPlainText() throws {
+        let release = try ReleaseInfo.decode(Data(releaseJSON.utf8))
+        let text = ReleaseNotes.plainText(release.body ?? "")
+        XCTAssertEqual(text, "Highlights\n\n• Fixes words while you type\n• Uses ditto")
+    }
+}

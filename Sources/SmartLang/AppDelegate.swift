@@ -5,6 +5,7 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = AppSettings.shared
+    private let updater = Updater.shared
     private var engine: Engine!
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
@@ -40,6 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        // Show a dot on the icon while an update is waiting.
+        updater.$available
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateIcon() } }
+            .store(in: &cancellables)
+        updater.start()
+
         if !Permissions.isTrusted {
             Permissions.requestAccessibility()
             Permissions.requestInputMonitoring()
@@ -62,6 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+
+        if let version = updater.available?.version {
+            let busy = updater.state == .downloading || updater.state == .installing
+            let title = busy ? "Downloading SmartLang \(version)…" : "Update to SmartLang \(version)…"
+            let item = NSMenuItem(title: title, action: busy ? nil : #selector(showUpdate), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = !busy
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
 
         menu.addItem(toggle("Enabled", settings.enabled, #selector(toggleEnabled)))
         menu.addItem(toggle("Auto-correct wrong-layout words", settings.autoCorrect, #selector(toggleAuto)))
@@ -89,6 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prefs = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
+        let check = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        check.target = self
+        menu.addItem(check)
         menu.addItem(NSMenuItem(title: "Quit SmartLang", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -105,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleSwitch() { settings.switchInputSource.toggle() }
     @objc private func openPermissions() { Permissions.requestAccessibility(); Permissions.openAccessibilitySettings() }
     @objc private func openInputMonitoring() { Permissions.requestInputMonitoring(); Permissions.openInputMonitoringSettings() }
+
+    @objc private func showUpdate() { updater.showUpdateAlert() }
+    @objc private func checkForUpdates() { updater.check(userInitiated: true) }
 
     @objc private func flipNow() {
         // Give focus back to the previous app before flipping its selection.
@@ -134,10 +158,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         button.title = ""
-        button.image = StatusIcon.image(iconStyle)
+        button.image = StatusIcon.image(iconStyle, badge: updater.available != nil)
         button.imagePosition = .imageOnly
         button.appearsDisabled = !settings.enabled // dimmed while paused
-        button.toolTip = "SmartLang — \(settings.enabled ? "on" : "paused")"
+        var tip = "SmartLang — \(settings.enabled ? "on" : "paused")"
+        if let version = updater.available?.version { tip += " — version \(version) available" }
+        button.toolTip = tip
     }
 
     /// Blinks the icon in inverted colours when a word is fixed or flipped:
@@ -158,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for (delay, inverted) in steps {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.flashGeneration == generation else { return }
-                button.image = StatusIcon.image(style, inverted: inverted)
+                button.image = StatusIcon.image(style, inverted: inverted, badge: self.updater.available != nil)
             }
         }
     }

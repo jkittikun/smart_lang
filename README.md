@@ -53,6 +53,10 @@ switch a word between Thai and English by hand. Press it again to switch back.
 - **Sounds**: choose any macOS alert sound (or none) for automatic fixes and,
   separately, for flips, with a volume slider and a preview button.
 - **Launch at login.**
+- **Updates itself.** About once a day SmartLang checks GitHub for a new
+  release. When there is one, you get a notification and a dot on the
+  menu-bar icon; choose **Update to SmartLang x.y.z…** in the menu to see
+  what's new and install it. See [Updates](#updates).
 
 ## How it works
 
@@ -122,9 +126,38 @@ The first time it runs, macOS asks for two permissions. Grant both in
 After you grant them, SmartLang starts working within a couple of seconds. You
 don't need to restart it. The menu-bar icon shows a small ก and A with two arrows; it blinks when a word is fixed or flipped. You can change the icon style and how it blinks (off, once, twice or three times, and for how long) in Settings → General.
 
-> If you rebuild the app, macOS may treat it as a new app. If it stops
-> reacting, remove SmartLang from both lists in System Settings and add it
-> again.
+> If you rebuild the app and it isn't signed with the
+> [SmartLang Signing certificate](#signing), macOS treats it as a new app.
+> If it stops reacting, remove SmartLang from both lists in System Settings
+> and add it again.
+
+### Updates
+
+SmartLang checks the [Releases](https://github.com/jkittikun/smart_lang/releases)
+page shortly after it starts and then about once a day. Turn this off, check
+by hand or un-skip a version in **Settings → Updates** (or use **Check for
+Updates…** in the menu). When a new version is out:
+
+1. A notification says so, and the menu-bar icon gets a small dot. Nothing is
+   downloaded yet.
+2. Click the notification, or choose **Update to SmartLang x.y.z…** in the
+   menu. You see what's new and can pick **Install and Relaunch**, **Later**
+   or **Skip This Version**.
+3. SmartLang downloads the `.zip` from the release and checks it. The SHA-256
+   must match the published `.sha256` file, the bundle ID and version must be
+   right, and the new app must be signed with the same certificate as the one
+   you're running. Then it replaces `/Applications/SmartLang.app` and restarts.
+
+You don't need to run `xattr` or click **Open Anyway** again. macOS only
+quarantines files that a browser downloads, and SmartLang downloads the
+update itself. You also don't need to grant the permissions again, as long
+as both versions are signed with the same certificate (see [Signing](#signing)).
+The first time, macOS may ask whether SmartLang may update apps
+(**Privacy & Security → App Management**). Allow it.
+
+Updating in place needs SmartLang to be in a folder you can write to, such as
+`/Applications` on an admin account. If it can't, it shows an error and you
+can install the new version by hand from the Releases page.
 
 ## Development
 
@@ -149,6 +182,43 @@ any missing files to that release.
 
 To make the disk image on your own Mac, run `./scripts/make_dmg.sh 1.0.1`
 after `./scripts/build_app.sh`.
+
+The in-app updater installs the newest release that isn't a pre-release, if
+it has `SmartLang-x.y.z.zip` and `SmartLang-x.y.z.zip.sha256` attached (the
+workflow attaches both). Pre-releases are never offered as updates.
+
+### Signing
+
+macOS remembers the Accessibility and Input Monitoring permissions by the
+certificate an app is signed with. With the default ad-hoc signature, every
+build counts as a new app, so the permissions must be granted again after
+each update. A self-signed certificate fixes this for free. (It doesn't
+remove the "could not verify" warning on the very first install. Only an
+Apple Developer ID with notarization does that.)
+
+Set it up once, on your Mac:
+
+```bash
+./scripts/make_signing_cert.sh
+```
+
+The script creates the **SmartLang Signing** certificate and adds it to your
+login keychain. It also saves a backup in `~/SmartLang-signing`. Keep that
+folder safe and never commit it. The script then prints two values. Add them
+on GitHub as repository secrets, under **Settings → Secrets and variables →
+Actions**:
+
+- `SMARTLANG_CERT_P12`: the certificate as base64 (the script copies it to
+  the clipboard)
+- `SMARTLANG_CERT_PASSWORD`: its password
+
+From then on, `./scripts/build_app.sh` and the Release workflow both sign
+with this certificate. If the secrets are missing, the workflow signs ad hoc
+and shows a warning. The updater won't install a release signed with a
+different certificate than the running app, so always sign with the same one.
+
+The first release signed with the certificate still needs the permissions
+granted once more, because the old ad-hoc build had a different identity.
 
 ### App icon
 

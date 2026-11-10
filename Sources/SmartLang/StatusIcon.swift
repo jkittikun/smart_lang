@@ -31,22 +31,29 @@ enum StatusIcon {
     static let height: CGFloat = 22
     private static var cache: [String: NSImage] = [:]
 
-    static func image(_ style: Style, inverted: Bool = false) -> NSImage {
-        let key = "\(style.rawValue)-\(inverted)"
+    /// `badge` adds a small dot at the top right (an update is available).
+    static func image(_ style: Style, inverted: Bool = false, badge: Bool = false) -> NSImage {
+        let key = "\(style.rawValue)-\(inverted)-\(badge)"
         if let cached = cache[key] { return cached }
-        let size = NSSize(width: style.width, height: height)
+        let badgeWidth: CGFloat = badge ? 5 : 0
+        let size = NSSize(width: style.width + badgeWidth, height: height)
         let image = NSImage(size: size, flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             NSColor.black.setFill()
             NSColor.black.setStroke()
+            let iconRect = NSRect(x: 0, y: 0, width: style.width, height: rect.height)
             if inverted {
-                NSBezierPath(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), xRadius: 4.5, yRadius: 4.5).fill()
+                NSBezierPath(roundedRect: iconRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 4.5, yRadius: 4.5).fill()
                 ctx.setBlendMode(.destinationOut) // everything below punches holes
             }
             switch style {
             case .diagonal: drawDiagonal()
             case .compact: drawCompact()
             case .underline: drawUnderline()
+            }
+            if badge {
+                ctx.setBlendMode(.normal)
+                NSBezierPath(ovalIn: NSRect(x: style.width + 0.6, y: 1, width: 4.2, height: 4.2)).fill()
             }
             return true
         }

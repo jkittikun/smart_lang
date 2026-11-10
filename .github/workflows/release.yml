@@ -4,6 +4,12 @@ name: Release
 # Builds a universal SmartLang.app, tags the commit vX.Y.Z and publishes a
 # GitHub release with SmartLang-X.Y.Z.dmg and SmartLang-X.Y.Z.zip attached.
 #
+# Signing: add the SMARTLANG_CERT_P12 and SMARTLANG_CERT_PASSWORD secrets
+# (printed by ./scripts/make_signing_cert.sh) so every release is signed with
+# the same certificate. Then macOS keeps SmartLang's permissions across updates
+# and the in-app updater accepts the new version. Without them the app is
+# signed ad hoc and the run shows a warning.
+#
 # If the release already exists, the app is rebuilt from that release's tag
 # and any missing files (e.g. the .dmg) are added to it; existing files are
 # left as they are.
@@ -50,6 +56,31 @@ jobs:
       - name: Unit tests
         run: swift test
 
+      - name: Import signing certificate
+        env:
+          CERT_P12: ${{ secrets.SMARTLANG_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.SMARTLANG_CERT_PASSWORD }}
+        run: |
+          if [[ -z "$CERT_P12" ]]; then
+            echo "::warning::SMARTLANG_CERT_P12 isn't set, so this release is signed ad hoc. Users will have to grant permissions again after updating. See scripts/make_signing_cert.sh."
+            echo "SIGN_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KC_PASSWORD" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning "$KC"
+          ID="$(security find-identity -p codesigning "$KC" | awk '$1 ~ /^[0-9]+\)$/ { print $2; exit }')"
+          if [[ -z "$ID" ]]; then echo "No code-signing identity in SMARTLANG_CERT_P12"; exit 1; fi
+          echo "SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
+
       - name: Build app (universal)
         run: UNIVERSAL=1 ./scripts/build_app.sh
 
@@ -58,6 +89,8 @@ jobs:
           test -f SmartLang.app/Contents/Resources/AppIcon.icns
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' SmartLang.app/Contents/Info.plist)" = "$VERSION"
           lipo -archs SmartLang.app/Contents/MacOS/SmartLang
+          codesign --verify --deep --strict --verbose=2 SmartLang.app
+          codesign --display --requirements - SmartLang.app
 
       - name: Zip app
         run: |
@@ -101,8 +134,16 @@ jobs:
           4. Grant **Accessibility** and **Input Monitoring** in
              System Settings → Privacy & Security.
 
-          When updating, quit SmartLang, remove it from both permission lists, install
-          the new version and grant the permissions again.
+          ### Updating
+          SmartLang 1.1 and later check for updates by themselves: you get a notification
+          and a dot on the menu-bar icon, then choose **Update to SmartLang $VERSION…** in the
+          menu (or Settings → Updates). The update is checked, installed and relaunched for
+          you, with no Gatekeeper warning and no need to run \`xattr\`. Your Accessibility and
+          Input Monitoring permissions are kept.
+
+          Coming from 1.0.x, or from a version signed ad hoc? Install this one by hand once:
+          quit SmartLang, remove it from both permission lists, install the new version and
+          grant the permissions again. Later updates keep them.
 
           Requires macOS 13 or later. Universal app (Apple Silicon and Intel).
           EOF

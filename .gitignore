@@ -4,3 +4,4 @@
 SmartLang.app/
 dist/
 .DS_Store
+*.p12
