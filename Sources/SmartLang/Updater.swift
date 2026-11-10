@@ -14,8 +14,9 @@ import UserNotifications
 ///    be signed with the same one (it must satisfy our designated requirement).
 ///
 /// A file the app downloads itself is not quarantined, so the new version opens
-/// without Gatekeeper's "could not verify" warning. And because it's signed with
-/// the same certificate, macOS keeps the Accessibility and Input Monitoring permissions.
+/// without Gatekeeper's "could not verify" warning (no `xattr` needed).
+/// Releases are signed ad hoc, so macOS sees each version as a new app and the
+/// Accessibility and Input Monitoring permissions must be given again after updating.
 final class Updater: NSObject, ObservableObject {
     static let shared = Updater()
 
@@ -180,7 +181,7 @@ final class Updater: NSObject, ObservableObject {
         if !Updater.isAppBundle {
             info += "\n\nRunning from a development build, so it can't update itself."
         } else if signingKind(of: Bundle.main.bundleURL) == .adHoc {
-            info += "\n\nAfter this update you may need to grant the Accessibility and Input Monitoring permissions once more."
+            info += "\n\nAfter updating, give SmartLang its permissions again: in System Settings → Privacy & Security → Accessibility and Input Monitoring, select SmartLang, click − to remove it, then allow it again when SmartLang asks."
         }
         alert.informativeText = info
         alert.addButton(withTitle: Updater.isAppBundle ? "Install and Relaunch" : "Open Releases Page")
